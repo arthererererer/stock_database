@@ -1,0 +1,355 @@
+---
+title: "產業類股成分股爬蟲分析說明"
+author: "Your Name"
+date: "2026-03-07"
+output:
+  html_document:
+    toc: true
+    toc_float: true 
+    toc_depth: 2
+    theme: united
+  pdf_document:
+    toc: true
+    toc_depth: '2'
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, eval = FALSE)
+```
+
+#檢查，要爬取的"工作表"需要複製html代碼
+
+#network -> overview，會需要提供headers (user-agent, cookie...)的資訊
+
+## 1. 載入必要的函式庫
+在此步驟，我們載入三個關鍵套件：
+
+reticulate:讓 R 與 Python 進行通訊，我們用它來執行Python 的爬蟲邏輯。
+readxl / writexl:負責Excel檔案的讀取與寫入，用於保存爬取進度。
+
+```{r}
+library(reticulate)
+library(readxl)
+library(writexl)
+```
+
+## 2. 設定檔案路徑與初始檢查
+
+我們定義了存放原始資料(industry.txt) 與最終結果 (Scraped_Progress.xlsx) 的路徑。
+
+```{r}
+folder_path <- "C:/Users/User/Desktop/報告整理/ALL_Report"
+file_source <- file.path(folder_path, "industry.txt")
+file_progress <- file.path(folder_path, "Scraped_Progress.xlsx")
+
+if (!file.exists(file_source)) stop("找不到 industry.txt 檔案！")
+```
+
+## 3. 解析產業主清單 (Python BeautifulSoup)
+
+這段程式碼會讀取 industry.txt 中的 HTML代碼，並透過Python的BeautifulSoup提取出所有產業的「名稱」與「代碼（如^028）」。
+
+為什麼要這麼做？
+為了建立一個標準化的對照表(master_map)，確保抓取時不會因為空格或特殊符號對不起來。
+
+```{r}
+html_text <- paste(readLines(file_source, warn = FALSE, encoding = "UTF-8"), collapse = "\n")
+
+py_run_string("
+from bs4 import BeautifulSoup
+soup = BeautifulSoup(r.html_text, 'html.parser')
+master_map = {}
+for a in soup.find_all('a', href=True):
+    if '/index/^' in a['href']:
+        name = a.get_text(strip=True)
+        code = a['href'].split('/')[2]
+        key = f'{name}({code})'.strip()
+        master_map[key] = code
+")
+master_map <- py$master_map
+```
+
+## 4. 檢查進度：斷點續爬功能
+
+為了避免重複爬取已完成的資料（或是程式當機後能繼續執行），我們讀取現有的 Excel 檔。
+
+比對 master_map（應爬清單）與 done_sectors（已爬清單）。
+篩選出 pending_map（本次要爬的剩餘清單）。
+
+
+```{r}
+if (file.exists(file_progress)) {
+  # 使用 check.names = FALSE 以確保 ^ 符號不會被轉成點 (.)
+  existing_df <- as.data.frame(read_excel(file_progress), check.names = FALSE)
+  done_sectors <- colnames(existing_df)
+  pending_map <- master_map[!(names(master_map) %in% done_sectors)]
+  
+  message(sprintf("偵測到進度檔：總共 %d 個類股，Excel 已存 %d 個，本次補爬剩餘的 %d 個。", 
+                  length(master_map), length(done_sectors), length(pending_map)))
+} else {
+  existing_df <- NULL
+  pending_map <- master_map
+  message(sprintf("尚未有進度檔：準備開始全新爬取 (共 %d 個類股)。", length(pending_map)))
+}
+```
+
+## 5. 執行 Python Selenium 自動化爬蟲
+
+這是核心的爬蟲邏輯。我們呼叫Chrome瀏覽器，逐一進入產業頁面並抓取成分股：
+
+顯式等待 (WebDriverWait)：確保網頁表格載入後才動作。
+正規化處理：過濾掉非股票代碼的文字。
+
+```{r}
+if (length(pending_map) > 0) {
+  py$pending_map <- pending_map
+  py_run_string("
+import time
+import pandas as pd
+from selenium import webdriver
+from selenium.webdriver.chrome.service import Service
+from webdriver_manager.chrome import ChromeDriverManager
+from selenium.webdriver.common.by import By
+from selenium.webdriver.support.ui import WebDriverWait
+from selenium.webdriver.support import expected_conditions as EC
+
+def scrape_missing_parts(task_map):
+    options = webdriver.ChromeOptions()
+    
+    # 1. 加入 User-Agent (你原本想加的)
+    options.add_argument('user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36')
+    
+    # 2. 關鍵：這行才能避開網站對 Selenium 的偵測
+    options.add_argument('--disable-blink-features=AutomationControlled')
+    
+    # 3. 隱藏自動化提示（選配，但建議加上）
+    options.add_experimental_option('excludeSwitches', ['enable-automation'])
+    options.add_experimental_option('useAutomationExtension', False)
+
+    driver = webdriver.Chrome(service=Service(ChromeDriverManager().install()), options=options)
+    new_data = {}
+    
+    try:
+        driver.get('https://www.wantgoo.com/index/overview')
+        time.sleep(2)
+        count = 0
+        total = len(task_map)
+        for name, code in task_map.items():
+            count += 1
+            url = f'https://www.wantgoo.com/index/{code.replace(\"^\", \"%5E\")}/stocks'
+            print(f'[{count}/{total}] 補爬任務: {name}')
+            try:
+                driver.get(url)
+                WebDriverWait(driver, 8).until(EC.presence_of_element_located((By.CSS_SELECTOR, 'table a[href*=\"/stock/\"]')))
+                time.sleep(1)
+                elements = driver.find_elements(By.CSS_SELECTOR, 'table a[href*=\"/stock/\"]')
+                stocks = [e.text.replace('\\n', '').strip() for e in elements]
+                stocks = [s for s in stocks if any(c.isdigit() for c in s)]
+                if stocks:
+                    new_data[name] = stocks
+                    print(f'   [V] 成功！')
+                else:
+                    print(f'   [X] 此頁面仍未載入資料')
+            except:
+                print(f'   [X] 等待超時')
+            time.sleep(0.5)
+    finally:
+        driver.quit()
+    return new_data
+
+current_results = scrape_missing_parts(pending_map)
+")
+}
+```
+
+## 6. 資料合併與 Excel 儲存
+
+由於各類股的股票數量不一，我們必須將長度不足的向量補上NA，最後將新爬到的資料與舊資料cbind（橫向合併），並更新檔案。
+
+
+```{r}
+new_results_list <- py$current_results
+
+if (length(new_results_list) > 0) {
+  max_l <- max(sapply(new_results_list, length))
+  new_df <- as.data.frame(lapply(new_results_list, function(x) {
+    length(x) <- max_l
+    return(x)
+  }), check.names = FALSE)
+  
+  if (is.null(existing_df)) {
+    final_df <- new_df
+  } else {
+    # 確保新舊資料行數一致，不足補 NA
+    total_n <- max(nrow(existing_df), nrow(new_df))
+    existing_df[seq(nrow(existing_df) + 1, length.out = total_n - nrow(existing_df)), ] <- NA
+    new_df[seq(nrow(new_df) + 1, length.out = total_n - nrow(new_df)), ] <- NA
+    final_df <- cbind(existing_df, new_df)
+  }
+  
+  write_xlsx(final_df, file_progress)
+  message(sprintf("\n更新完成！目前已成功累積 %d 個類股。", ncol(final_df)))
+} else {
+  message("\n本次執行未能獲取新資料或已全部完成。")
+}
+```
+
+## 7. 結束，以下為完整代碼
+
+<details>
+<summary>點擊展開查看完整程式碼</summary>
+
+```{r}
+library(reticulate)
+library(readxl)
+library(writexl)
+
+# 1. 檢查，要爬取的"工作表"需要複製html代碼
+# 2. network -> overview，會需要提供headers (user-agent, cookie...)的資訊
+
+
+# --- 1. 設定路徑 ---
+folder_path <- "C:/Users/User/Desktop/報告整理/ALL_Report"
+file_source <- file.path(folder_path, "industry.txt")
+file_progress <- file.path(folder_path, "Scraped_Progress.xlsx")
+
+# --- 2. 讀取 industry.txt 並建立標準清單 ---
+if (!file.exists(file_source)) stop("找不到 industry.txt 檔案！")
+html_text <- paste(readLines(file_source, warn = FALSE, encoding = "UTF-8"), collapse = "\n")
+
+# 在 Python 中建立標準化的 master_map (確保 Key 前後完全沒有空白)
+py_run_string("
+from bs4 import BeautifulSoup
+soup = BeautifulSoup(r.html_text, 'html.parser')
+# 建立一個乾淨的 dictionary: { '電零組(^028)': '^028' }
+master_map = {}
+for a in soup.find_all('a', href=True):
+    if '/index/^' in a['href']:
+        name = a.get_text(strip=True)
+        code = a['href'].split('/')[2]
+        # 強制移除所有前後空格
+        key = f'{name}({code})'.strip()
+        master_map[key] = code
+")
+master_map <- py$master_map
+
+# --- 3. 判斷哪些類股真的需要爬 (精準比對) ---
+if (file.exists(file_progress)) {
+  # 關鍵：加上 check.names = FALSE 防止 R 自動改掉欄位中的 ^ 和 ()
+  existing_df <- as.data.frame(read_excel(file_progress), check.names = FALSE)
+  
+  # 獲取已經抓好的欄位名稱
+  done_sectors <- colnames(existing_df)
+  
+  # 使用精準過濾：只留下「名稱完全不在 Excel 欄位裡」的類股
+  pending_map <- master_map[!(names(master_map) %in% done_sectors)]
+  
+  message(sprintf("偵測到進度檔：總共 %d 個類股，Excel 已存 %d 個，本次補爬剩餘的 %d 個。", 
+                  length(master_map), length(done_sectors), length(pending_map)))
+} else {
+  existing_df <- NULL
+  pending_map <- master_map
+  message(sprintf("尚未有進度檔：準備開始全新爬取 (共 %d 個類股)。", length(pending_map)))
+}
+
+# 檢查是否已全部完成
+if (length(pending_map) == 0) {
+  message(">>> 恭喜！所有類股已全部爬取完成，Excel 檔案已是最新狀態。")
+  # 直接結束，不進入爬蟲
+} else {
+  
+  # --- 4. 執行 Python 爬蟲 (只爬取 pending_map) ---
+  py$pending_map <- pending_map
+  
+  py_run_string("
+import time
+import pandas as pd
+from selenium import webdriver
+from selenium.webdriver.chrome.service import Service
+from webdriver_manager.chrome import ChromeDriverManager
+from selenium.webdriver.common.by import By
+from selenium.webdriver.support.ui import WebDriverWait
+from selenium.webdriver.support import expected_conditions as EC
+
+def scrape_missing_parts(task_map):
+    options = webdriver.ChromeOptions()
+    
+    # 1. 加入 User-Agent (你原本想加的)
+    options.add_argument('user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36')
+    
+    # 2. 關鍵：這行才能避開網站對 Selenium 的偵測
+    options.add_argument('--disable-blink-features=AutomationControlled')
+    
+    # 3. 隱藏自動化提示（選配，但建議加上）
+    options.add_experimental_option('excludeSwitches', ['enable-automation'])
+    options.add_experimental_option('useAutomationExtension', False)
+
+    driver = webdriver.Chrome(service=Service(ChromeDriverManager().install()), options=options)
+    new_data = {}
+    
+    try:
+        driver.get('https://www.wantgoo.com/index/overview')
+        time.sleep(2)
+        
+        count = 0
+        total = len(task_map)
+        for name, code in task_map.items():
+            count += 1
+            url = f'https://www.wantgoo.com/index/{code.replace(\"^\", \"%5E\")}/stocks'
+            print(f'[{count}/{total}] 補爬任務: {name}')
+            
+            try:
+                driver.get(url)
+                # 顯式等待
+                WebDriverWait(driver, 8).until(EC.presence_of_element_located((By.CSS_SELECTOR, 'table a[href*=\"/stock/\"]')))
+                time.sleep(1)
+                
+                elements = driver.find_all(By.CSS_SELECTOR, 'table a[href*=\"/stock/\"]') if hasattr(driver, 'find_all') else driver.find_elements(By.CSS_SELECTOR, 'table a[href*=\"/stock/\"]')
+                stocks = [e.text.replace('\\n', '').strip() for e in elements]
+                stocks = [s for s in stocks if any(c.isdigit() for c in s)]
+                
+                if stocks:
+                    new_data[name] = stocks
+                    print(f'   [V] 成功！')
+                else:
+                    print(f'   [X] 此頁面仍未載入資料')
+            except:
+                print(f'   [X] 等待超時')
+            
+            time.sleep(0.5)
+    finally:
+        driver.quit()
+    return new_data
+
+current_results = scrape_missing_parts(pending_map)
+")
+  
+  # --- 5. 合併結果並存檔 ---
+  new_results_list <- py$current_results
+  
+  if (length(new_results_list) > 0) {
+    max_l <- max(sapply(new_results_list, length))
+    # 關鍵：這裡也要加上 check.names = FALSE
+    new_df <- as.data.frame(lapply(new_results_list, function(x) {
+      length(x) <- max_l
+      return(x)
+    }), check.names = FALSE)
+    
+    if (is.null(existing_df)) {
+      final_df <- new_df
+    } else {
+      total_n <- max(nrow(existing_df), nrow(new_df))
+      existing_df[seq(nrow(existing_df) + 1, length.out = total_n - nrow(existing_df)), ] <- NA
+      new_df[seq(nrow(new_df) + 1, length.out = total_n - nrow(new_df)), ] <- NA
+      
+      # 合併，同樣確保不更動名稱
+      final_df <- cbind(existing_df, new_df)
+    }
+    
+    write_xlsx(final_df, file_progress)
+    message(sprintf("\n更新完成！目前已成功累積 %d 個類股。", ncol(final_df)))
+  } else {
+    message("\n本次執行未能獲取新資料。")
+  }
+}
+```

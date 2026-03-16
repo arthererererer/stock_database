@@ -1,0 +1,225 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>財經數據分析平台</title>
+  <link rel="stylesheet" href="/static/css/style.css" />
+  <script src="https://cdn.plot.ly/plotly-2.35.2.min.js"></script>
+</head>
+<body>
+
+<!-- ── 頂部導覽列 ─────────────────────────────────────────────────── -->
+<header class="header">
+  <div class="header-inner">
+    <div class="logo">
+      <span class="logo-icon">📊</span>
+      <span class="logo-text">財經數據分析平台</span>
+    </div>
+    <nav class="tab-nav">
+      <button class="tab-btn active" data-tab="market">大盤監控區</button>
+      <button class="tab-btn" data-tab="intl">國際股市區</button>
+    </nav>
+    <div class="header-actions">
+      <span id="last-update" class="last-update">載入中…</span>
+      <button class="btn-reload" id="btn-reload" title="重新載入資料">↺ 重新載入</button>
+    </div>
+  </div>
+</header>
+
+<!-- ── 主內容區 ────────────────────────────────────────────────────── -->
+<main class="main">
+
+  <!-- ════ 大盤監控區 ════ -->
+  <section id="tab-market" class="tab-content active">
+
+    <!-- 1. 成交量位階儀表板 -->
+    <div class="section">
+      <div class="section-header">
+        <h2 class="section-title">今日成交量位階</h2>
+        <span class="section-sub">最新一日成交金額在滾動一年資料中的百分位數</span>
+      </div>
+      <div class="gauges-row" id="gauges-row">
+        <!-- 動態產生 -->
+      </div>
+    </div>
+
+    <!-- 日期篩選器 -->
+    <div class="date-range-bar">
+      <span class="dr-label">📅 時間範圍：</span>
+      <input type="date" id="date-start" class="date-input" />
+      <span class="dr-sep">至</span>
+      <input type="date" id="date-end" class="date-input" />
+      <button class="btn-apply" id="btn-apply">套用</button>
+      <button class="btn-preset" data-months="3">近3月</button>
+      <button class="btn-preset" data-months="6">近6月</button>
+      <button class="btn-preset active" data-months="12">近1年</button>
+    </div>
+
+    <!-- 3. 各市場漲跌比例折線圖（3張） -->
+    <div class="section">
+      <div class="section-header">
+        <h2 class="section-title">各市場漲跌家數比例趨勢</h2>
+        <span class="section-sub">上漲 / 下跌 / 漲停 / 跌停 家數佔總家數比例（%）</span>
+      </div>
+      <div class="charts-row-3" id="line-charts-row">
+        <!-- 動態產生 -->
+      </div>
+    </div>
+
+    <!-- 4. 委買/委賣力道比 -->
+    <div class="section">
+      <div class="section-header">
+        <h2 class="section-title">委買 / 委賣力道比</h2>
+        <span class="section-sub">總委買數量 ÷ 總委賣數量，大於 1 代表買盤佔優</span>
+      </div>
+      <div id="chart-buysell" class="chart-full"></div>
+    </div>
+
+    <!-- 5. 成交金額趨勢 -->
+    <div class="section">
+      <div class="section-header">
+        <h2 class="section-title">成交金額趨勢</h2>
+        <span class="section-sub">日成交金額 + 5/20 日移動平均 + 歷史百分位帶（20th / 50th / 80th）</span>
+      </div>
+      <div id="chart-amount" class="chart-full"></div>
+    </div>
+
+    <!-- 6. 資金流向堆疊面積圖 -->
+    <div class="section">
+      <div class="section-header">
+        <h2 class="section-title">資金流向</h2>
+        <span class="section-sub">各市場成交金額佔比隨時間演變（%）</span>
+      </div>
+      <div id="chart-capital-flow" class="chart-full"></div>
+    </div>
+
+    <!-- 7. 市場廣度震盪指標 -->
+    <div class="section">
+      <div class="section-header">
+        <h2 class="section-title">市場廣度震盪指標</h2>
+        <span class="section-sub">（上漲家數 − 下跌家數）÷ 總家數 × 100，正值多頭主導</span>
+      </div>
+      <div id="chart-breadth" class="chart-full"></div>
+    </div>
+
+  </section><!-- /tab-market -->
+
+  <!-- ════ 國際股市區 ════ -->
+  <section id="tab-intl" class="tab-content">
+
+    <!-- 控制面板 -->
+    <div class="section intl-ctrl-section">
+      <div class="section-header">
+        <h2 class="section-title">國際股市比較分析</h2>
+        <span class="section-sub">走勢圖顯示原始指數數值；報酬率圖以基準日為起點計算累積報酬（台幣計價）</span>
+      </div>
+
+      <!-- 日期與基準日列 -->
+      <div class="date-range-bar intl-date-bar" id="intl-date-bar">
+        <span class="dr-label">顯示期間：</span>
+        <input type="date" id="intl-start" class="date-input" />
+        <span class="dr-sep">至</span>
+        <input type="date" id="intl-end" class="date-input" />
+        <span class="dr-sep intl-base-sep">｜ 基準日：</span>
+        <input type="date" id="intl-base" class="date-input" />
+        <button class="btn-apply" id="intl-btn-apply">套用</button>
+        <button class="btn-preset intl-preset active" data-months="12">近1年</button>
+        <button class="btn-preset intl-preset" data-months="6">近6月</button>
+        <button class="btn-preset intl-preset" data-months="3">近3月</button>
+      </div>
+
+      <!-- 指數選擇器 -->
+      <div class="intl-selector">
+        <!-- 搜尋框 -->
+        <div class="intl-search-wrap">
+          <input type="text" id="intl-search" class="intl-search-input"
+                 placeholder="🔍 搜尋指數名稱或代碼…" autocomplete="off" />
+        </div>
+
+        <!-- 兩欄勾選清單 -->
+        <div class="intl-axis-cols">
+          <div class="intl-axis-col">
+            <div class="intl-col-hdr">
+              <span class="intl-col-label primary-label">主軸（左 Y 軸）</span>
+              <button class="btn-intl-clear" id="intl-clear-primary">清除</button>
+            </div>
+            <div class="intl-checklist" id="intl-list-primary"></div>
+          </div>
+          <div class="intl-axis-col">
+            <div class="intl-col-hdr">
+              <span class="intl-col-label secondary-label">副軸（右 Y 軸）</span>
+              <button class="btn-intl-clear" id="intl-clear-secondary">清除</button>
+            </div>
+            <div class="intl-checklist" id="intl-list-secondary"></div>
+          </div>
+        </div>
+      </div><!-- /intl-selector -->
+    </div><!-- /控制面板 -->
+
+    <!-- 圖表 1：基期化指數 -->
+    <div class="section">
+      <div class="section-header">
+        <h2 class="section-title">指數走勢（原始數值）</h2>
+        <span class="section-sub">各指數原始報價數值，不同規模的指數請分配至主軸／副軸</span>
+      </div>
+      <div id="intl-chart-normalized" class="chart-full intl-chart-area"></div>
+      <!-- 座標軸刻度控制 -->
+      <div class="intl-axis-ctrl-bar">
+        <span class="axis-ctrl-lbl">主軸</span>
+        <input type="number" id="intl-n-y1-min"  class="axis-num-input" placeholder="最小值" step="any" />
+        <span class="dr-sep">~</span>
+        <input type="number" id="intl-n-y1-max"  class="axis-num-input" placeholder="最大值" step="any" />
+        <span class="axis-ctrl-lbl">間距</span>
+        <input type="number" id="intl-n-y1-tick" class="axis-num-input" placeholder="自動"   step="any" />
+        <span class="axis-ctrl-sep">│</span>
+        <span class="axis-ctrl-lbl">副軸</span>
+        <input type="number" id="intl-n-y2-min"  class="axis-num-input" placeholder="最小值" step="any" />
+        <span class="dr-sep">~</span>
+        <input type="number" id="intl-n-y2-max"  class="axis-num-input" placeholder="最大值" step="any" />
+        <span class="axis-ctrl-lbl">間距</span>
+        <input type="number" id="intl-n-y2-tick" class="axis-num-input" placeholder="自動"   step="any" />
+        <button class="btn-apply-axis" data-chart="normalized">套用軸設定</button>
+        <button class="btn-reset-axis" data-chart="normalized">重置</button>
+      </div>
+    </div>
+
+    <!-- 圖表 2：累積報酬率 -->
+    <div class="section">
+      <div class="section-header">
+        <h2 class="section-title">累積報酬率走勢</h2>
+        <span class="section-sub">自基準日起算台幣計價累積報酬（%）；選單一指數時可分解指數影響與匯率影響；LOCAL 指數不列入本圖</span>
+      </div>
+      <div id="intl-chart-returns" class="chart-full intl-chart-area"></div>
+      <!-- 座標軸刻度控制 -->
+      <div class="intl-axis-ctrl-bar">
+        <span class="axis-ctrl-lbl">主軸</span>
+        <input type="number" id="intl-r-y1-min"  class="axis-num-input" placeholder="最小值" step="any" />
+        <span class="dr-sep">~</span>
+        <input type="number" id="intl-r-y1-max"  class="axis-num-input" placeholder="最大值" step="any" />
+        <span class="axis-ctrl-lbl">間距</span>
+        <input type="number" id="intl-r-y1-tick" class="axis-num-input" placeholder="自動"   step="any" />
+        <span class="axis-ctrl-sep">│</span>
+        <span class="axis-ctrl-lbl">副軸</span>
+        <input type="number" id="intl-r-y2-min"  class="axis-num-input" placeholder="最小值" step="any" />
+        <span class="dr-sep">~</span>
+        <input type="number" id="intl-r-y2-max"  class="axis-num-input" placeholder="最大值" step="any" />
+        <span class="axis-ctrl-lbl">間距</span>
+        <input type="number" id="intl-r-y2-tick" class="axis-num-input" placeholder="自動"   step="any" />
+        <button class="btn-apply-axis" data-chart="returns">套用軸設定</button>
+        <button class="btn-reset-axis" data-chart="returns">重置</button>
+      </div>
+    </div>
+
+  </section><!-- /tab-intl -->
+</main>
+
+<!-- ── 載入遮罩 ─────────────────────────────────────────────────────── -->
+<div id="loading-overlay" class="loading-overlay">
+  <div class="loading-spinner"></div>
+  <div class="loading-text">資料載入中…</div>
+</div>
+
+<script src="/static/js/charts.js"></script>
+</body>
+</html>
