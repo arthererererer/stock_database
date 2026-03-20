@@ -19,10 +19,31 @@
     <nav class="tab-nav">
       <button class="tab-btn active" data-tab="market">大盤監控區</button>
       <button class="tab-btn" data-tab="intl">國際股市區</button>
+      <button class="tab-btn" data-tab="stock">個股監控</button>
     </nav>
     <div class="header-actions">
+      <!-- 研究報告下拉選單 -->
+      <div class="report-dropdown" id="report-dropdown">
+        <button class="btn-report-toggle" id="btn-report-toggle">研究報告 ▾</button>
+        <div class="report-dropdown-menu" id="report-dropdown-menu">
+          <div class="rdm-group">技術面</div>
+          <a href="/private/report_a.html" target="_blank">a. 振幅分析</a>
+          <a href="/private/report_b.html" target="_blank">b. 指數穩定 / 連續上漲</a>
+          <a href="/private/report_c.html" target="_blank">c. 缺口開盤分析</a>
+          <a href="/private/report_h.html" target="_blank">h. 連板研究</a>
+          <div class="rdm-group">籌碼面</div>
+          <a href="/private/report_f.html" target="_blank">f. 融資維持率</a>
+          <a href="/private/report_g.html" target="_blank">g. 借券賣超</a>
+          <a href="/private/report_i.html" target="_blank">i. 法人買賣超</a>
+          <div class="rdm-group">統計 / 綜合</div>
+          <a href="/private/report_d.html" target="_blank">d. 變數統計分布</a>
+          <a href="/private/report_e.html" target="_blank">e. 事件重疊觀察</a>
+        </div>
+      </div>
+      <a href="/stats" target="_blank" class="btn-stats-link">統計分布 ↗</a>
       <span id="last-update" class="last-update">載入中…</span>
       <button class="btn-reload" id="btn-reload" title="重新載入資料">↺ 重新載入</button>
+      <button class="btn-event-csv" id="btn-event-csv" title="產生事件研究 CSV">⚡ 更新事件CSV</button>
     </div>
   </div>
 </header>
@@ -56,24 +77,42 @@
       <button class="btn-preset active" data-months="12">近1年</button>
     </div>
 
-    <!-- 3. 各市場漲跌比例折線圖（3張） -->
+    <!-- 特徵溢酬監控（月再平衡 tercile LS） -->
     <div class="section">
       <div class="section-header">
-        <h2 class="section-title">各市場漲跌家數比例趨勢</h2>
-        <span class="section-sub">上漲 / 下跌 / 漲停 / 跌停 家數佔總家數比例（%）</span>
+        <h2 class="section-title">特徵溢酬監控</h2>
+        <span class="section-sub">
+          月再平衡（月末最後交易日分組、次一交易日起持有）、雙重排序後 tercile 高減低之等權 long–short（日超額報酬％）。
+          可對照 Y9999 加權指數超額；與日頻 <code>因子報酬.csv</code> 之因子投組定義不同。
+        </span>
       </div>
-      <div class="charts-row-3" id="line-charts-row">
-        <!-- 動態產生 -->
+      <div class="feature-premium-bar" id="feature-premium-bar">
+        <span class="fp-item"><label for="fp-dim1">第一維（控制）</label>
+          <select id="fp-dim1" class="fp-select"></select></span>
+        <span class="fp-item"><label for="fp-dim2">第二維（特徵）</label>
+          <select id="fp-dim2" class="fp-select"></select></span>
+        <span class="fp-item fp-check"><label><input type="checkbox" id="fp-show-mkt" checked /> Y9999 超額對照（累積％）</label></span>
+        <span id="fp-status" class="fp-status"></span>
       </div>
+      <div id="chart-feature-premium" class="chart-full"></div>
     </div>
 
-    <!-- 4. 委買/委賣力道比 -->
+    <!-- 3. 委買/委賣力道比 -->
     <div class="section">
       <div class="section-header">
         <h2 class="section-title">委買 / 委賣力道比</h2>
-        <span class="section-sub">總委買數量 ÷ 總委賣數量，大於 1 代表買盤佔優</span>
+        <span class="section-sub">總委買數量 ÷ 總委賣數量，大於 1 代表買盤佔優。上市/上櫃為撮合制；興櫃採造市商報價驅動，掛單結構不同，力道比可能顯著差異。</span>
       </div>
       <div id="chart-buysell" class="chart-full"></div>
+    </div>
+
+    <!-- 4. 每日振幅大個股比例 -->
+    <div class="section">
+      <div class="section-header">
+        <h2 class="section-title">每日振幅大個股比例</h2>
+        <span class="section-sub">當日振幅大事件個股佔全體比例（%）；需先產生報告 a 才有資料</span>
+      </div>
+      <div id="chart-market-amp" class="chart-full"></div>
     </div>
 
     <!-- 5. 成交金額趨勢 -->
@@ -212,6 +251,129 @@
     </div>
 
   </section><!-- /tab-intl -->
+
+  <!-- ════ 個股監控 ════ -->
+  <section id="tab-stock" class="tab-content">
+
+    <!-- 控制面板 -->
+    <div class="section stock-ctrl-section">
+      <div class="section-header">
+        <h2 class="section-title">個股監控</h2>
+        <span class="section-sub">輸入一或多個證券代碼，查詢股價、籌碼、財務指標，並支援跨頻率疊加顯示</span>
+      </div>
+
+      <!-- 代碼輸入列 -->
+      <div class="stock-input-bar">
+        <input type="text" id="stock-input" class="stock-input-field"
+               placeholder="輸入證券代碼（多檔以逗號隔開，例：2330, 2303）" autocomplete="off" />
+        <button class="btn-apply" id="stock-search-btn">查詢</button>
+        <button class="btn-reload" id="stock-reload-btn" title="重新載入資料">↺ 重新載入</button>
+      </div>
+
+      <!-- 常用快捷股票 -->
+      <div class="stock-quick-bar" id="stock-quick-bar">
+        <!-- 動態產生 -->
+      </div>
+
+      <!-- 時間範圍列 -->
+      <div class="date-range-bar stock-date-bar">
+        <span class="dr-label">📅 時間範圍：</span>
+        <input type="date" id="stock-start" class="date-input" />
+        <span class="dr-sep">至</span>
+        <input type="date" id="stock-end" class="date-input" />
+        <button class="btn-apply" id="stock-date-apply">套用</button>
+        <button class="btn-preset stock-preset active" data-months="12">近1年</button>
+        <button class="btn-preset stock-preset" data-months="6">近6月</button>
+        <button class="btn-preset stock-preset" data-months="3">近3月</button>
+      </div>
+
+      <!-- 多股模式切換 -->
+      <div class="stock-mode-bar">
+        <span class="mode-label">多股顯示模式：</span>
+        <label class="mode-radio">
+          <input type="radio" name="stock-mode" value="overlay" checked />
+          <span>疊加比較（指數化報酬）</span>
+        </label>
+        <label class="mode-radio">
+          <input type="radio" name="stock-mode" value="separate" />
+          <span>各自子圖</span>
+        </label>
+      </div>
+
+      <!-- 副軸資料選擇（季資料） -->
+      <div class="stock-overlay-bar" id="stock-overlay-bar">
+        <span class="overlay-label">季資料疊加（副軸）：</span>
+        <select id="quarterly-col-select" class="overlay-select">
+          <option value="">— 不疊加 —</option>
+        </select>
+      </div>
+    </div><!-- /控制面板 -->
+
+    <!-- 圖表 1：收盤價走勢（+ 可選季資料副軸） -->
+    <div class="section" id="section-stock-price" style="display:none">
+      <div class="section-header">
+        <h2 class="section-title">收盤價走勢</h2>
+        <span class="section-sub" id="stock-price-sub">日收盤價（主軸）＋ 季財務指標（副軸，可選）</span>
+      </div>
+      <div id="chart-stock-price" class="chart-full stock-chart-area"></div>
+    </div>
+
+    <!-- 圖表 2：指數化累積報酬（疊加模式）/ 各股收盤（子圖模式） -->
+    <div class="section" id="section-stock-return" style="display:none">
+      <div class="section-header">
+        <h2 class="section-title" id="stock-return-title">累積報酬率比較</h2>
+        <span class="section-sub" id="stock-return-sub">以查詢區間起始日為基準（= 100），比較各股相對表現</span>
+      </div>
+      <div id="chart-stock-return" class="chart-full stock-chart-area"></div>
+    </div>
+
+    <!-- 圖表 3：振幅 + 月董監持股副軸 -->
+    <div class="section" id="section-stock-amplitude" style="display:none">
+      <div class="section-header">
+        <h2 class="section-title">振幅走勢</h2>
+        <span class="section-sub">高低價差 %（日頻）＋ 20日滾動均值，副軸：董監持股%（月頻）</span>
+      </div>
+      <div id="chart-stock-amplitude" class="chart-full stock-chart-area"></div>
+    </div>
+
+    <!-- 圖表 4：法人籌碼 -->
+    <div class="section" id="section-stock-chip" style="display:none">
+      <div class="section-header">
+        <h2 class="section-title">法人買賣超</h2>
+        <span class="section-sub">外資 / 投信 / 自營商每日買賣超（張）</span>
+      </div>
+      <div id="chart-stock-chip" class="chart-full stock-chart-area"></div>
+    </div>
+
+    <!-- 圖表 5：估值指標 -->
+    <div class="section" id="section-stock-valuation" style="display:none">
+      <div class="section-header">
+        <h2 class="section-title">估值指標</h2>
+        <span class="section-sub">本益比 / 股淨比 / 現金殖利率（日頻）</span>
+      </div>
+      <div id="chart-stock-valuation" class="chart-full stock-chart-area"></div>
+    </div>
+
+    <!-- 摘要統計表 -->
+    <div class="section" id="section-stock-table" style="display:none">
+      <div class="section-header">
+        <h2 class="section-title">資料摘要</h2>
+        <span class="section-sub">最新日頻 / 月頻 / 季頻資料對照</span>
+      </div>
+      <div id="stock-summary-table" class="stock-table-wrap">
+        <!-- 動態產生 -->
+      </div>
+    </div>
+
+    <!-- 空白提示（無查詢時） -->
+    <div class="stock-empty-hint" id="stock-empty-hint">
+      <div class="stock-empty-icon">🔍</div>
+      <div class="stock-empty-text">請在上方輸入證券代碼後按「查詢」</div>
+      <div class="stock-empty-sub">例：<code>2330</code>，或多檔：<code>2330, 2303, 2317</code></div>
+    </div>
+
+  </section><!-- /tab-stock -->
+
 </main>
 
 <!-- ── 載入遮罩 ─────────────────────────────────────────────────────── -->

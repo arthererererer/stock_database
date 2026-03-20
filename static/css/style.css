@@ -109,6 +109,20 @@ body {
 }
 .btn-reload:hover { background: var(--bg-card2); color: var(--text); }
 
+.btn-stats-link {
+  padding: 5px 14px;
+  border: 1px solid var(--accent);
+  border-radius: var(--radius);
+  background: transparent;
+  color: var(--accent);
+  font-size: .82rem;
+  font-weight: 500;
+  text-decoration: none;
+  transition: var(--transition);
+  white-space: nowrap;
+}
+.btn-stats-link:hover { background: rgba(88,166,255,.12); }
+
 /* ── Main Layout ─────────────────────────────────────────────────────── */
 .main {
   max-width: 1680px;
@@ -286,6 +300,48 @@ body {
   transition: var(--transition);
 }
 .date-input:focus { border-color: var(--accent); }
+
+/* 特徵溢酬監控控制列 */
+.feature-premium-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 16px 20px;
+  margin-bottom: 16px;
+  padding: 12px 16px;
+  background: var(--bg-card2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+}
+.feature-premium-bar .fp-item label {
+  display: block;
+  font-size: .78rem;
+  color: var(--text-muted);
+  margin-bottom: 4px;
+}
+.feature-premium-bar .fp-select {
+  min-width: 140px;
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  color: var(--text);
+  padding: 6px 10px;
+  font-size: .88rem;
+}
+.feature-premium-bar .fp-check label {
+  font-size: .88rem;
+  color: var(--text-muted);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.feature-premium-bar .fp-status {
+  font-size: .82rem;
+  color: var(--text-dim);
+  flex: 1;
+  min-width: 120px;
+}
 
 .btn-apply {
   padding: 6px 18px;
@@ -594,4 +650,272 @@ body {
 @media (max-width: 640px) {
   .intl-axis-ctrl-bar { gap: 6px; }
   .axis-num-input { width: 72px; }
+}
+
+/* ════════════════════════════════════════════════════════════════════════
+   研究報告下拉選單
+   ════════════════════════════════════════════════════════════════════════ */
+
+.report-dropdown { position: relative; }
+
+.btn-report-toggle {
+  padding: 5px 14px;
+  border: 1px solid var(--accent);
+  border-radius: var(--radius);
+  background: transparent;
+  color: var(--accent);
+  font-size: .82rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: var(--transition);
+  white-space: nowrap;
+  user-select: none;
+}
+.btn-report-toggle:hover { background: rgba(88,166,255,.12); }
+
+.report-dropdown-menu {
+  display: none;
+  position: absolute;
+  top: calc(100% + 6px);
+  right: 0;
+  min-width: 210px;
+  background: var(--bg-card2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  box-shadow: 0 8px 24px rgba(0,0,0,.5);
+  z-index: 200;
+  padding: 6px 0;
+  overflow: hidden;
+}
+.report-dropdown-menu.open { display: block; }
+
+.rdm-group {
+  padding: 6px 14px 3px;
+  font-size: .72rem;
+  font-weight: 700;
+  color: var(--text-dim);
+  text-transform: uppercase;
+  letter-spacing: .06em;
+  border-top: 1px solid var(--border);
+  margin-top: 4px;
+}
+.rdm-group:first-child { border-top: none; margin-top: 0; }
+
+.report-dropdown-menu a {
+  display: block;
+  padding: 6px 20px;
+  font-size: .85rem;
+  color: var(--text-muted);
+  text-decoration: none;
+  transition: background var(--transition), color var(--transition);
+}
+.report-dropdown-menu a:hover {
+  background: rgba(88,166,255,.1);
+  color: var(--text);
+}
+
+/* 事件CSV按鈕 */
+.btn-event-csv {
+  padding: 5px 14px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: transparent;
+  color: var(--text-muted);
+  font-size: .82rem;
+  cursor: pointer;
+  transition: var(--transition);
+  white-space: nowrap;
+}
+.btn-event-csv:hover { background: var(--bg-card2); color: var(--text); }
+.btn-event-csv:disabled { opacity: .5; cursor: not-allowed; }
+
+/* ════════════════════════════════════════════════════════════════════════
+   個股監控區
+   ════════════════════════════════════════════════════════════════════════ */
+
+/* 控制面板 */
+.stock-ctrl-section { padding-bottom: 20px; }
+
+/* 代碼輸入列 */
+.stock-input-bar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 12px;
+  flex-wrap: wrap;
+}
+.stock-input-field {
+  flex: 1;
+  min-width: 260px;
+  max-width: 560px;
+  background: var(--bg-card2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  color: var(--text);
+  padding: 8px 14px;
+  font-size: .9rem;
+  outline: none;
+  transition: var(--transition);
+}
+.stock-input-field:focus { border-color: var(--accent); box-shadow: 0 0 0 2px rgba(88,166,255,.15); }
+.stock-input-field::placeholder { color: var(--text-dim); }
+
+/* 快捷股票列 */
+.stock-quick-bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-bottom: 12px;
+}
+.quick-label {
+  font-size: .8rem;
+  color: var(--text-dim);
+  flex-shrink: 0;
+}
+.btn-quick-stock {
+  padding: 3px 12px;
+  background: transparent;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  color: var(--text-muted);
+  font-size: .8rem;
+  cursor: pointer;
+  transition: var(--transition);
+  font-variant-numeric: tabular-nums;
+}
+.btn-quick-stock:hover { background: var(--bg-card2); color: var(--accent); border-color: var(--accent); }
+
+/* 多股模式列 */
+.stock-mode-bar {
+  display: flex;
+  align-items: center;
+  gap: 20px;
+  flex-wrap: wrap;
+  margin-bottom: 12px;
+}
+.mode-label {
+  font-size: .85rem;
+  color: var(--text-muted);
+  flex-shrink: 0;
+}
+.mode-radio {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  cursor: pointer;
+  font-size: .85rem;
+  color: var(--text-muted);
+  transition: color var(--transition);
+}
+.mode-radio:has(input:checked) { color: var(--text); }
+.mode-radio input[type="radio"] { accent-color: var(--accent); }
+
+/* 副軸選擇列 */
+.stock-overlay-bar {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+.overlay-label {
+  font-size: .85rem;
+  color: var(--text-muted);
+  flex-shrink: 0;
+}
+.overlay-select {
+  min-width: 260px;
+  max-width: 480px;
+  background: var(--bg-card2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  color: var(--text);
+  padding: 6px 10px;
+  font-size: .85rem;
+  outline: none;
+  cursor: pointer;
+  transition: var(--transition);
+}
+.overlay-select:focus { border-color: var(--accent); }
+.overlay-select option { background: var(--bg-card2); }
+
+/* 圖表高度 */
+.stock-chart-area { min-height: 380px; }
+
+/* 空白提示 */
+.stock-empty-hint {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  padding: 80px 24px;
+  color: var(--text-dim);
+}
+.stock-empty-icon { font-size: 2.5rem; }
+.stock-empty-text { font-size: 1rem; color: var(--text-muted); }
+.stock-empty-sub  { font-size: .85rem; color: var(--text-dim); }
+.stock-empty-sub code {
+  background: var(--bg-card2);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 1px 6px;
+  font-family: monospace;
+  color: var(--accent);
+}
+
+/* 無資料佔位 */
+.stock-no-data {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 120px;
+  color: var(--text-dim);
+  font-size: .88rem;
+}
+
+/* 摘要統計表 */
+.stock-table-wrap { overflow-x: auto; }
+.stock-sum-tbl {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: .85rem;
+}
+.stock-sum-tbl th,
+.stock-sum-tbl td {
+  padding: 8px 14px;
+  text-align: right;
+  border-bottom: 1px solid var(--border);
+  white-space: nowrap;
+}
+.stock-sum-tbl th {
+  background: rgba(255,255,255,.03);
+  color: var(--text-muted);
+  font-weight: 700;
+  text-align: center;
+}
+.stock-sum-tbl td:first-child { text-align: left; }
+.stock-sum-tbl th:first-child { text-align: left; }
+.sum-section-hdr td {
+  background: rgba(88,166,255,.06);
+  color: var(--accent);
+  font-weight: 700;
+  font-size: .78rem;
+  text-align: left;
+  letter-spacing: .04em;
+  padding: 6px 14px;
+  border-bottom-color: rgba(88,166,255,.2);
+}
+.sum-row-lbl { color: var(--text-muted); text-align: left !important; }
+.sum-val { color: var(--text); font-variant-numeric: tabular-nums; }
+.freq-col {
+  font-size: .76rem;
+  color: var(--text-dim);
+  text-align: center !important;
+  min-width: 48px;
+}
+
+/* 響應式 */
+@media (max-width: 768px) {
+  .stock-input-field { max-width: 100%; }
 }

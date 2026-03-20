@@ -191,13 +191,14 @@ def build_html(df: pd.DataFrame) -> str:
     body = '\n'.join(sections)
 
     data_range = f"{df['date'].min().strftime('%Y-%m-%d')} ～ {df['date'].max().strftime('%Y-%m-%d')}"
+    generated_at = pd.Timestamp.now().strftime('%Y-%m-%d %H:%M:%S')
 
     return f'''<!DOCTYPE html>
 <html lang="zh-TW">
 <head>
 <meta charset="UTF-8"/>
 <meta name="viewport" content="width=device-width,initial-scale=1.0"/>
-<title>大盤統計 — 私下統計分布報告</title>
+<title>大盤統計 — 統計分布報告</title>
 <script src="https://cdn.plot.ly/plotly-2.35.2.min.js"></script>
 <style>
 :root{{
@@ -208,9 +209,14 @@ def build_html(df: pd.DataFrame) -> str:
 }}
 *,*::before,*::after{{box-sizing:border-box;margin:0;padding:0}}
 body{{background:var(--bg);color:var(--text);font-family:'Inter','Noto Sans TC',system-ui;padding:0 0 60px}}
-header{{background:var(--card);border-bottom:1px solid var(--border);padding:18px 32px;display:flex;align-items:baseline;gap:16px}}
-header h1{{font-size:1.1rem;font-weight:700}}
-header .sub{{font-size:.82rem;color:var(--muted)}}
+header{{background:var(--card);border-bottom:1px solid var(--border);padding:14px 32px;display:flex;align-items:center;gap:16px;flex-wrap:wrap}}
+header h1{{font-size:1.05rem;font-weight:700;flex:1;min-width:200px}}
+.header-right{{display:flex;align-items:center;gap:12px;flex-wrap:wrap}}
+header .sub{{font-size:.78rem;color:var(--muted)}}
+.btn-reload{{padding:6px 18px;background:var(--accent);border:none;border-radius:var(--radius);color:#fff;font-size:.85rem;font-weight:600;cursor:pointer;transition:.18s}}
+.btn-reload:hover{{opacity:.85}}
+.btn-reload:disabled{{opacity:.5;cursor:not-allowed}}
+.reload-status{{font-size:.78rem;color:var(--muted);min-width:80px}}
 .main{{max-width:1440px;margin:0 auto;padding:24px 24px}}
 .section{{background:var(--card);border:1px solid var(--border);border-radius:var(--radius-lg);padding:22px;margin-bottom:20px}}
 .section-header{{margin-bottom:12px}}
@@ -223,6 +229,11 @@ header .sub{{font-size:.82rem;color:var(--muted)}}
 .stats-table tr:last-child td{{border-bottom:none}}
 .tb-label{{color:var(--muted);width:55%}}
 .tb-val{{color:var(--text);text-align:right;font-variant-numeric:tabular-nums}}
+.loading-overlay{{display:none;position:fixed;inset:0;background:rgba(13,17,23,.8);align-items:center;justify-content:center;flex-direction:column;gap:16px;z-index:9999}}
+.loading-overlay.show{{display:flex}}
+.spinner{{width:40px;height:40px;border:3px solid var(--border);border-top-color:var(--accent);border-radius:50%;animation:spin .8s linear infinite}}
+@keyframes spin{{to{{transform:rotate(360deg)}}}}
+.loading-text{{color:var(--muted);font-size:.9rem}}
 ::-webkit-scrollbar{{width:6px;height:6px}}
 ::-webkit-scrollbar-track{{background:var(--bg)}}
 ::-webkit-scrollbar-thumb{{background:var(--border);border-radius:3px}}
@@ -230,32 +241,79 @@ header .sub{{font-size:.82rem;color:var(--muted)}}
 </style>
 </head>
 <body>
+
+<div class="loading-overlay" id="overlay">
+  <div class="spinner"></div>
+  <div class="loading-text">重新產生報告中，請稍候…</div>
+</div>
+
 <header>
   <h1>📊 大盤統計 — 統計分布報告</h1>
-  <span class="sub">資料期間：{data_range} ／ 共 {len(df)} 筆</span>
+  <div class="header-right">
+    <span class="sub">資料期間：{data_range} ／ 共 {len(df)} 筆</span>
+    <span class="sub">產生時間：{generated_at}</span>
+    <span class="reload-status" id="reload-status"></span>
+    <button class="btn-reload" id="btn-reload" onclick="reloadStats()">↺ 重新載入</button>
+  </div>
 </header>
 <div class="main">
 {body}
 </div>
+
+<script>
+async function reloadStats() {{
+  const btn = document.getElementById('btn-reload');
+  const status = document.getElementById('reload-status');
+  const overlay = document.getElementById('overlay');
+
+  btn.disabled = true;
+  overlay.classList.add('show');
+  status.textContent = '重新產生中…';
+
+  try {{
+    const res = await fetch('/api/regen-stats');
+    const data = await res.json();
+    if (data.status === 'ok') {{
+      status.textContent = '完成，重新整理中…';
+      setTimeout(() => window.location.reload(), 600);
+    }} else {{
+      status.textContent = '產生失敗：' + (data.error || '未知錯誤');
+      overlay.classList.remove('show');
+      btn.disabled = false;
+    }}
+  }} catch (e) {{
+    status.textContent = '連線失敗，請確認後端已啟動';
+    overlay.classList.remove('show');
+    btn.disabled = false;
+  }}
+}}
+</script>
 </body>
 </html>'''
 
 
-# ── 主程式 ────────────────────────────────────────────────────────────
+# ── 對外介面（供 Flask 引入）──────────────────────────────────────────
+
+def generate(df=None):
+    """
+    重新產生統計分布報告。
+    df 為 None 時自動從 data_service 載入最新資料。
+    """
+    if df is None:
+        df = ds.load_all_data()
+    html = build_html(df)
+    with open(OUTPUT_PATH, 'w', encoding='utf-8') as f:
+        f.write(html)
+    return OUTPUT_PATH
+
+
+# ── 直接執行的入口 ────────────────────────────────────────────────────
 
 def main():
     print('載入資料中…')
-    df = ds.load_all_data()
-    print(f'  共 {len(df)} 筆，{len(df["證券代碼"].unique())} 個標的')
-
-    print('產生報告中…')
-    html = build_html(df)
-
-    with open(OUTPUT_PATH, 'w', encoding='utf-8') as f:
-        f.write(html)
-
-    print(f'[完成] 報告已儲存至：{OUTPUT_PATH}')
-    print('   請用瀏覽器開啟該 HTML 檔案即可查閱。')
+    path = generate()
+    print(f'[完成] 報告已儲存至：{path}')
+    print('   請透過 http://127.0.0.1:5000/stats 開啟，或直接開啟該 HTML 檔案。')
 
 
 if __name__ == '__main__':
