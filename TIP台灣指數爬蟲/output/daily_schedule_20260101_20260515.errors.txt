@@ -1,0 +1,577 @@
+HUC4CS (ICE TIP 1-5年期BB-B級成熟市場精選票息美元主順位非投資等級債券指數): Locator.click: Timeout 30000ms exceeded.
+Call log:
+  - waiting for locator("main").get_by_role("button", name="搜尋").last
+    - locator resolved to <button data-v-1738d335="" class="d-none d-lg-inline-block btn btn-blue-filled">搜尋</button>
+  - attempting click action
+    2 × waiting for element to be visible, enabled and stable
+      - element is visible, enabled and stable
+      - scrolling into view if needed
+      - done scrolling
+      - <div class="message" data-v-73ec942a="">查無指數相關歷史資料</div> from <div data-v-73ec942a="" data-v-435b8c8e="" class="alert-drop-shadow">…</div> subtree intercepts pointer events
+    - retrying click action
+    - waiting 20ms
+    2 × waiting for element to be visible, enabled and stable
+      - element is not stable
+    - retrying click action
+      - waiting 100ms
+    13 × waiting for element to be visible, enabled and stable
+       - element is visible, enabled and stable
+       - scrolling into view if needed
+       - done scrolling
+       - <div data-v-73ec942a="" data-v-435b8c8e="" class="alert-drop-shadow">…</div> intercepts pointer events
+     - retrying click action
+       - waiting 500ms
+       - waiting for element to be visible, enabled and stable
+       - element is visible, enabled and stable
+       - scrolling into view if needed
+       - done scrolling
+       - <div data-v-73ec942a="" data-v-435b8c8e="" class="alert-drop-shadow">…</div> intercepts pointer events
+     - retrying click action
+       - waiting 500ms
+       - waiting for element to be visible, enabled and stable
+       - element is visible, enabled and stable
+       - scrolling into view if needed
+       - done scrolling
+       - <div data-v-73ec942a="" data-v-435b8c8e="" class="alert-drop-shadow">…</div> intercepts pointer events
+     - retrying click action
+       - waiting 500ms
+       - waiting for element to be visible, enabled and stable
+       - element is visible, enabled and stable
+       - scrolling into view if needed
+       - done scrolling
+       - <div class="message" data-v-73ec942a="">查無指數相關歷史資料</div> from <div data-v-73ec942a="" data-v-435b8c8e="" class="alert-drop-shadow">…</div> subtree intercepts pointer events
+     - retrying click action
+       - waiting 500ms
+    3 × waiting for element to be visible, enabled and stable
+      - element is visible, enabled and stable
+      - scrolling into view if needed
+      - done scrolling
+      - <div data-v-73ec942a="" data-v-435b8c8e="" class="alert-drop-shadow">…</div> intercepts pointer events
+    - retrying click action
+      - waiting 500ms
+
+IX0185 (綠能環保類指數): Locator.wait_for: Timeout 15000ms exceeded.
+Call log:
+  - waiting for locator("input.rounded-input[name=\"date\"]").first
+
+IX0186 (數位雲端類指數): Locator.wait_for: Timeout 15000ms exceeded.
+Call log:
+  - waiting for locator("input.rounded-input[name=\"date\"]").first
+
+IX0187 (運動休閒類指數): Locator.wait_for: Timeout 15000ms exceeded.
+Call log:
+  - waiting for locator("input.rounded-input[name=\"date\"]").first
+
+IX0188 (居家生活類指數): Locator.wait_for: Timeout 15000ms exceeded.
+Call log:
+  - waiting for locator("input.rounded-input[name=\"date\"]").first
+
+NYTPASI (NYSE TIP未來全球算力及太空基礎建設指數): Locator.click: Timeout 30000ms exceeded.
+Call log:
+  - waiting for locator("main").get_by_role("button", name="搜尋").last
+    - locator resolved to <button data-v-1738d335="" class="d-none d-lg-inline-block btn btn-blue-filled">搜尋</button>
+  - attempting click action
+    2 × waiting for element to be visible, enabled and stable
+      - element is visible, enabled and stable
+      - scrolling into view if needed
+      - done scrolling
+      - <div data-v-73ec942a="" data-v-435b8c8e="" class="alert-drop-shadow">…</div> intercepts pointer events
+    - retrying click action
+    - waiting 20ms
+    - waiting for element to be visible, enabled and stable
+    - element is visible, enabled and stable
+    - scrolling into view if needed
+    - done scrolling
+    - <div data-v-73ec942a="" data-v-435b8c8e="" class="alert-drop-shadow">…</div> intercepts pointer events
+  2 × retrying click action
+      - waiting 100ms
+      - waiting for element to be visible, enabled and stable
+      - element is not stable
+  2 × retrying click action
+      - waiting 500ms
+      - waiting for element to be visible, enabled and stable
+      - element is visible, enabled and stable
+      - scrolling into view if needed
+      - done scrolling
+      - <div class="message" data-v-73ec942a="">查無指數相關歷史資料</div> from <div data-v-73ec942a="" data-v-435b8c8e="" class="alert-drop-shadow">…</div> subtree intercepts pointer events
+    - retrying click action
+      - waiting 500ms
+      - waiting for element to be visible, enabled and stable
+      - element is visible, enabled and stable
+      - scrolling into view if needed
+      - done scrolling
+      - <div data-v-73ec942a="" data-v-435b8c8e="" class="alert-drop-shadow">…</div> intercepts pointer events
+  12 × retrying click action
+       - waiting 500ms
+       - waiting for element to be visible, enabled and stable
+       - element is visible, enabled and stable
+       - scrolling into view if needed
+       - done scrolling
+       - <div data-v-73ec942a="" data-v-435b8c8e="" class="alert-drop-shadow">…</div> intercepts pointer events
+     - retrying click action
+       - waiting 500ms
+       - waiting for element to be visible, enabled and stable
+       - element is visible, enabled and stable
+       - scrolling into view if needed
+       - done scrolling
+       - <div data-v-73ec942a="" data-v-435b8c8e="" class="alert-drop-shadow">…</div> intercepts pointer events
+     - retrying click action
+       - waiting 500ms
+       - waiting for element to be visible, enabled and stable
+       - element is visible, enabled and stable
+       - scrolling into view if needed
+       - done scrolling
+       - <div class="message" data-v-73ec942a="">查無指數相關歷史資料</div> from <div data-v-73ec942a="" data-v-435b8c8e="" class="alert-drop-shadow">…</div> subtree intercepts pointer events
+     - retrying click action
+       - waiting 500ms
+       - waiting for element to be visible, enabled and stable
+       - element is visible, enabled and stable
+       - scrolling into view if needed
+       - done scrolling
+       - <div data-v-73ec942a="" data-v-435b8c8e="" class="alert-drop-shadow">…</div> intercepts pointer events
+  2 × retrying click action
+      - waiting 500ms
+      - waiting for element to be visible, enabled and stable
+      - element is visible, enabled and stable
+      - scrolling into view if needed
+      - done scrolling
+      - <div data-v-73ec942a="" data-v-435b8c8e="" class="alert-drop-shadow">…</div> intercepts pointer events
+  - retrying click action
+    - waiting 500ms
+
+NYTPDCE (NYSE TIP數據中心及電力指數): Locator.click: Timeout 30000ms exceeded.
+Call log:
+  - waiting for locator("main").get_by_role("button", name="搜尋").last
+    - locator resolved to <button data-v-1738d335="" class="d-none d-lg-inline-block btn btn-blue-filled">搜尋</button>
+  - attempting click action
+    2 × waiting for element to be visible, enabled and stable
+      - element is visible, enabled and stable
+      - scrolling into view if needed
+      - done scrolling
+      - <div data-v-73ec942a="" data-v-435b8c8e="" class="alert-drop-shadow">…</div> intercepts pointer events
+    - retrying click action
+    - waiting 20ms
+    - waiting for element to be visible, enabled and stable
+    - element is visible, enabled and stable
+    - scrolling into view if needed
+    - done scrolling
+    - <div data-v-73ec942a="" data-v-435b8c8e="" class="alert-drop-shadow">…</div> intercepts pointer events
+  2 × retrying click action
+      - waiting 100ms
+      - waiting for element to be visible, enabled and stable
+      - element is not stable
+  2 × retrying click action
+      - waiting 500ms
+      - waiting for element to be visible, enabled and stable
+      - element is visible, enabled and stable
+      - scrolling into view if needed
+      - done scrolling
+      - <div class="message" data-v-73ec942a="">查無指數相關歷史資料</div> from <div data-v-73ec942a="" data-v-435b8c8e="" class="alert-drop-shadow">…</div> subtree intercepts pointer events
+    - retrying click action
+      - waiting 500ms
+      - waiting for element to be visible, enabled and stable
+      - element is visible, enabled and stable
+      - scrolling into view if needed
+      - done scrolling
+      - <div data-v-73ec942a="" data-v-435b8c8e="" class="alert-drop-shadow">…</div> intercepts pointer events
+  12 × retrying click action
+       - waiting 500ms
+       - waiting for element to be visible, enabled and stable
+       - element is visible, enabled and stable
+       - scrolling into view if needed
+       - done scrolling
+       - <div data-v-73ec942a="" data-v-435b8c8e="" class="alert-drop-shadow">…</div> intercepts pointer events
+     - retrying click action
+       - waiting 500ms
+       - waiting for element to be visible, enabled and stable
+       - element is visible, enabled and stable
+       - scrolling into view if needed
+       - done scrolling
+       - <div data-v-73ec942a="" data-v-435b8c8e="" class="alert-drop-shadow">…</div> intercepts pointer events
+     - retrying click action
+       - waiting 500ms
+       - waiting for element to be visible, enabled and stable
+       - element is visible, enabled and stable
+       - scrolling into view if needed
+       - done scrolling
+       - <div class="message" data-v-73ec942a="">查無指數相關歷史資料</div> from <div data-v-73ec942a="" data-v-435b8c8e="" class="alert-drop-shadow">…</div> subtree intercepts pointer events
+     - retrying click action
+       - waiting 500ms
+       - waiting for element to be visible, enabled and stable
+       - element is visible, enabled and stable
+       - scrolling into view if needed
+       - done scrolling
+       - <div data-v-73ec942a="" data-v-435b8c8e="" class="alert-drop-shadow">…</div> intercepts pointer events
+  - retrying click action
+    - waiting 500ms
+    - waiting for element to be visible, enabled and stable
+    - element is visible, enabled and stable
+    - scrolling into view if needed
+    - done scrolling
+    - <div data-v-73ec942a="" data-v-435b8c8e="" class="alert-drop-shadow">…</div> intercepts pointer events
+  - retrying click action
+    - waiting 500ms
+
+NYTPGDM (NYSE TIP美國黃金礦業指數): Locator.click: Timeout 30000ms exceeded.
+Call log:
+  - waiting for locator("main").get_by_role("button", name="搜尋").last
+    - locator resolved to <button data-v-1738d335="" class="d-none d-lg-inline-block btn btn-blue-filled">搜尋</button>
+  - attempting click action
+    2 × waiting for element to be visible, enabled and stable
+      - element is visible, enabled and stable
+      - scrolling into view if needed
+      - done scrolling
+      - <div data-v-73ec942a="" data-v-435b8c8e="" class="alert-drop-shadow">…</div> intercepts pointer events
+    - retrying click action
+    - waiting 20ms
+    - waiting for element to be visible, enabled and stable
+    - element is visible, enabled and stable
+    - scrolling into view if needed
+    - done scrolling
+    - <div data-v-73ec942a="" data-v-435b8c8e="" class="alert-drop-shadow">…</div> intercepts pointer events
+  2 × retrying click action
+      - waiting 100ms
+      - waiting for element to be visible, enabled and stable
+      - element is not stable
+  2 × retrying click action
+      - waiting 500ms
+      - waiting for element to be visible, enabled and stable
+      - element is visible, enabled and stable
+      - scrolling into view if needed
+      - done scrolling
+      - <div class="message" data-v-73ec942a="">查無指數相關歷史資料</div> from <div data-v-73ec942a="" data-v-435b8c8e="" class="alert-drop-shadow">…</div> subtree intercepts pointer events
+    - retrying click action
+      - waiting 500ms
+      - waiting for element to be visible, enabled and stable
+      - element is visible, enabled and stable
+      - scrolling into view if needed
+      - done scrolling
+      - <div data-v-73ec942a="" data-v-435b8c8e="" class="alert-drop-shadow">…</div> intercepts pointer events
+  12 × retrying click action
+       - waiting 500ms
+       - waiting for element to be visible, enabled and stable
+       - element is visible, enabled and stable
+       - scrolling into view if needed
+       - done scrolling
+       - <div data-v-73ec942a="" data-v-435b8c8e="" class="alert-drop-shadow">…</div> intercepts pointer events
+     - retrying click action
+       - waiting 500ms
+       - waiting for element to be visible, enabled and stable
+       - element is visible, enabled and stable
+       - scrolling into view if needed
+       - done scrolling
+       - <div data-v-73ec942a="" data-v-435b8c8e="" class="alert-drop-shadow">…</div> intercepts pointer events
+     - retrying click action
+       - waiting 500ms
+       - waiting for element to be visible, enabled and stable
+       - element is visible, enabled and stable
+       - scrolling into view if needed
+       - done scrolling
+       - <div class="message" data-v-73ec942a="">查無指數相關歷史資料</div> from <div data-v-73ec942a="" data-v-435b8c8e="" class="alert-drop-shadow">…</div> subtree intercepts pointer events
+     - retrying click action
+       - waiting 500ms
+       - waiting for element to be visible, enabled and stable
+       - element is visible, enabled and stable
+       - scrolling into view if needed
+       - done scrolling
+       - <div data-v-73ec942a="" data-v-435b8c8e="" class="alert-drop-shadow">…</div> intercepts pointer events
+  2 × retrying click action
+      - waiting 500ms
+      - waiting for element to be visible, enabled and stable
+      - element is visible, enabled and stable
+      - scrolling into view if needed
+      - done scrolling
+      - <div data-v-73ec942a="" data-v-435b8c8e="" class="alert-drop-shadow">…</div> intercepts pointer events
+  - retrying click action
+    - waiting 500ms
+
+NYTPGRE (NYSE TIP全球稀土與關鍵資源指數): Locator.click: Timeout 30000ms exceeded.
+Call log:
+  - waiting for locator("main").get_by_role("button", name="搜尋").last
+    - locator resolved to <button data-v-1738d335="" class="d-none d-lg-inline-block btn btn-blue-filled">搜尋</button>
+  - attempting click action
+    2 × waiting for element to be visible, enabled and stable
+      - element is visible, enabled and stable
+      - scrolling into view if needed
+      - done scrolling
+      - <div data-v-73ec942a="" data-v-435b8c8e="" class="alert-drop-shadow">…</div> intercepts pointer events
+    - retrying click action
+    - waiting 20ms
+    - waiting for element to be visible, enabled and stable
+    - element is visible, enabled and stable
+    - scrolling into view if needed
+    - done scrolling
+    - <div data-v-73ec942a="" data-v-435b8c8e="" class="alert-drop-shadow">…</div> intercepts pointer events
+  2 × retrying click action
+      - waiting 100ms
+      - waiting for element to be visible, enabled and stable
+      - element is not stable
+  2 × retrying click action
+      - waiting 500ms
+      - waiting for element to be visible, enabled and stable
+      - element is visible, enabled and stable
+      - scrolling into view if needed
+      - done scrolling
+      - <div class="message" data-v-73ec942a="">查無指數相關歷史資料</div> from <div data-v-73ec942a="" data-v-435b8c8e="" class="alert-drop-shadow">…</div> subtree intercepts pointer events
+    - retrying click action
+      - waiting 500ms
+      - waiting for element to be visible, enabled and stable
+      - element is visible, enabled and stable
+      - scrolling into view if needed
+      - done scrolling
+      - <div data-v-73ec942a="" data-v-435b8c8e="" class="alert-drop-shadow">…</div> intercepts pointer events
+  12 × retrying click action
+       - waiting 500ms
+       - waiting for element to be visible, enabled and stable
+       - element is visible, enabled and stable
+       - scrolling into view if needed
+       - done scrolling
+       - <div data-v-73ec942a="" data-v-435b8c8e="" class="alert-drop-shadow">…</div> intercepts pointer events
+     - retrying click action
+       - waiting 500ms
+       - waiting for element to be visible, enabled and stable
+       - element is visible, enabled and stable
+       - scrolling into view if needed
+       - done scrolling
+       - <div data-v-73ec942a="" data-v-435b8c8e="" class="alert-drop-shadow">…</div> intercepts pointer events
+     - retrying click action
+       - waiting 500ms
+       - waiting for element to be visible, enabled and stable
+       - element is visible, enabled and stable
+       - scrolling into view if needed
+       - done scrolling
+       - <div class="message" data-v-73ec942a="">查無指數相關歷史資料</div> from <div data-v-73ec942a="" data-v-435b8c8e="" class="alert-drop-shadow">…</div> subtree intercepts pointer events
+     - retrying click action
+       - waiting 500ms
+       - waiting for element to be visible, enabled and stable
+       - element is visible, enabled and stable
+       - scrolling into view if needed
+       - done scrolling
+       - <div data-v-73ec942a="" data-v-435b8c8e="" class="alert-drop-shadow">…</div> intercepts pointer events
+  2 × retrying click action
+      - waiting 500ms
+      - waiting for element to be visible, enabled and stable
+      - element is visible, enabled and stable
+      - scrolling into view if needed
+      - done scrolling
+      - <div data-v-73ec942a="" data-v-435b8c8e="" class="alert-drop-shadow">…</div> intercepts pointer events
+  - retrying click action
+    - waiting 500ms
+
+NYTPPCB (NYSE TIP台日韓PCB指數): Locator.click: Timeout 30000ms exceeded.
+Call log:
+  - waiting for locator("main").get_by_role("button", name="搜尋").last
+    - locator resolved to <button data-v-1738d335="" class="d-none d-lg-inline-block btn btn-blue-filled">搜尋</button>
+  - attempting click action
+    2 × waiting for element to be visible, enabled and stable
+      - element is visible, enabled and stable
+      - scrolling into view if needed
+      - done scrolling
+      - <div data-v-73ec942a="" data-v-435b8c8e="" class="alert-drop-shadow">…</div> intercepts pointer events
+    - retrying click action
+    - waiting 20ms
+    - waiting for element to be visible, enabled and stable
+    - element is visible, enabled and stable
+    - scrolling into view if needed
+    - done scrolling
+    - <div data-v-73ec942a="" data-v-435b8c8e="" class="alert-drop-shadow">…</div> intercepts pointer events
+  2 × retrying click action
+      - waiting 100ms
+      - waiting for element to be visible, enabled and stable
+      - element is not stable
+  2 × retrying click action
+      - waiting 500ms
+      - waiting for element to be visible, enabled and stable
+      - element is visible, enabled and stable
+      - scrolling into view if needed
+      - done scrolling
+      - <div class="message" data-v-73ec942a="">查無指數相關歷史資料</div> from <div data-v-73ec942a="" data-v-435b8c8e="" class="alert-drop-shadow">…</div> subtree intercepts pointer events
+    - retrying click action
+      - waiting 500ms
+      - waiting for element to be visible, enabled and stable
+      - element is visible, enabled and stable
+      - scrolling into view if needed
+      - done scrolling
+      - <div data-v-73ec942a="" data-v-435b8c8e="" class="alert-drop-shadow">…</div> intercepts pointer events
+  12 × retrying click action
+       - waiting 500ms
+       - waiting for element to be visible, enabled and stable
+       - element is visible, enabled and stable
+       - scrolling into view if needed
+       - done scrolling
+       - <div data-v-73ec942a="" data-v-435b8c8e="" class="alert-drop-shadow">…</div> intercepts pointer events
+     - retrying click action
+       - waiting 500ms
+       - waiting for element to be visible, enabled and stable
+       - element is visible, enabled and stable
+       - scrolling into view if needed
+       - done scrolling
+       - <div data-v-73ec942a="" data-v-435b8c8e="" class="alert-drop-shadow">…</div> intercepts pointer events
+     - retrying click action
+       - waiting 500ms
+       - waiting for element to be visible, enabled and stable
+       - element is visible, enabled and stable
+       - scrolling into view if needed
+       - done scrolling
+       - <div class="message" data-v-73ec942a="">查無指數相關歷史資料</div> from <div data-v-73ec942a="" data-v-435b8c8e="" class="alert-drop-shadow">…</div> subtree intercepts pointer events
+     - retrying click action
+       - waiting 500ms
+       - waiting for element to be visible, enabled and stable
+       - element is visible, enabled and stable
+       - scrolling into view if needed
+       - done scrolling
+       - <div data-v-73ec942a="" data-v-435b8c8e="" class="alert-drop-shadow">…</div> intercepts pointer events
+  - retrying click action
+    - waiting 500ms
+    - waiting for element to be visible, enabled and stable
+    - element is visible, enabled and stable
+    - scrolling into view if needed
+    - done scrolling
+    - <div data-v-73ec942a="" data-v-435b8c8e="" class="alert-drop-shadow">…</div> intercepts pointer events
+  - retrying click action
+    - waiting 500ms
+    - waiting for element to be visible, enabled and stable
+
+t001 (未含金融保險股指數): Locator.wait_for: Timeout 15000ms exceeded.
+Call log:
+  - waiting for locator("input.rounded-input[name=\"date\"]").first
+
+t002 (未含電子股指數): Locator.wait_for: Timeout 15000ms exceeded.
+Call log:
+  - waiting for locator("input.rounded-input[name=\"date\"]").first
+
+t003 (未含金融電子股指數): Locator.wait_for: Timeout 15000ms exceeded.
+Call log:
+  - waiting for locator("input.rounded-input[name=\"date\"]").first
+
+t01 (水泥類指數): Locator.wait_for: Timeout 15000ms exceeded.
+Call log:
+  - waiting for locator("input.rounded-input[name=\"date\"]").first
+
+t011 (水泥窯製類指數): Locator.wait_for: Timeout 15000ms exceeded.
+Call log:
+  - waiting for locator("input.rounded-input[name=\"date\"]").first
+
+t02 (食品類指數): Locator.wait_for: Timeout 15000ms exceeded.
+Call log:
+  - waiting for locator("input.rounded-input[name=\"date\"]").first
+
+t03 (塑膠類指數): Locator.wait_for: Timeout 15000ms exceeded.
+Call log:
+  - waiting for locator("input.rounded-input[name=\"date\"]").first
+
+t031 (塑膠化工類指數): Locator.wait_for: Timeout 15000ms exceeded.
+Call log:
+  - waiting for locator("input.rounded-input[name=\"date\"]").first
+
+t04 (紡織纖維類指數): Locator.wait_for: Timeout 15000ms exceeded.
+Call log:
+  - waiting for locator("input.rounded-input[name=\"date\"]").first
+
+t05 (電機機械類指數): Locator.wait_for: Timeout 15000ms exceeded.
+Call log:
+  - waiting for locator("input.rounded-input[name=\"date\"]").first
+
+t051 (機電類指數): Locator.wait_for: Timeout 15000ms exceeded.
+Call log:
+  - waiting for locator("input.rounded-input[name=\"date\"]").first
+
+t06 (電器電纜類指數): Locator.wait_for: Timeout 15000ms exceeded.
+Call log:
+  - waiting for locator("input.rounded-input[name=\"date\"]").first
+
+t07 (化學生技醫療類指數): Locator.wait_for: Timeout 15000ms exceeded.
+Call log:
+  - waiting for locator("input.rounded-input[name=\"date\"]").first
+
+t08 (玻璃陶瓷類指數): Locator.wait_for: Timeout 15000ms exceeded.
+Call log:
+  - waiting for locator("input.rounded-input[name=\"date\"]").first
+
+t09 (造紙類指數): Locator.wait_for: Timeout 15000ms exceeded.
+Call log:
+  - waiting for locator("input.rounded-input[name=\"date\"]").first
+
+t10 (鋼鐵類指數): Locator.wait_for: Timeout 15000ms exceeded.
+Call log:
+  - waiting for locator("input.rounded-input[name=\"date\"]").first
+
+t11 (橡膠類指數): Locator.wait_for: Timeout 15000ms exceeded.
+Call log:
+  - waiting for locator("input.rounded-input[name=\"date\"]").first
+
+t12 (汽車類指數): Locator.wait_for: Timeout 15000ms exceeded.
+Call log:
+  - waiting for locator("input.rounded-input[name=\"date\"]").first
+
+t13 (電子類指數): Locator.wait_for: Timeout 15000ms exceeded.
+Call log:
+  - waiting for locator("input.rounded-input[name=\"date\"]").first
+
+t14 (建材營造類指數): Locator.wait_for: Timeout 15000ms exceeded.
+Call log:
+  - waiting for locator("input.rounded-input[name=\"date\"]").first
+
+t15 (航運類指數): Locator.wait_for: Timeout 15000ms exceeded.
+Call log:
+  - waiting for locator("input.rounded-input[name=\"date\"]").first
+
+t16 (觀光類指數): Locator.wait_for: Timeout 15000ms exceeded.
+Call log:
+  - waiting for locator("input.rounded-input[name=\"date\"]").first
+
+t17 (金融保險類指數): Locator.wait_for: Timeout 15000ms exceeded.
+Call log:
+  - waiting for locator("input.rounded-input[name=\"date\"]").first
+
+t18 (貿易百貨類指數): Locator.wait_for: Timeout 15000ms exceeded.
+Call log:
+  - waiting for locator("input.rounded-input[name=\"date\"]").first
+
+t20 (其他類指數): Locator.wait_for: Timeout 15000ms exceeded.
+Call log:
+  - waiting for locator("input.rounded-input[name=\"date\"]").first
+
+t21 (化學類指數): Locator.wait_for: Timeout 15000ms exceeded.
+Call log:
+  - waiting for locator("input.rounded-input[name=\"date\"]").first
+
+t22 (生技醫療類指數): Locator.wait_for: Timeout 15000ms exceeded.
+Call log:
+  - waiting for locator("input.rounded-input[name=\"date\"]").first
+
+t23 (油電燃氣類指數): Locator.wait_for: Timeout 15000ms exceeded.
+Call log:
+  - waiting for locator("input.rounded-input[name=\"date\"]").first
+
+t24 (半導體類指數): Locator.wait_for: Timeout 15000ms exceeded.
+Call log:
+  - waiting for locator("input.rounded-input[name=\"date\"]").first
+
+t25 (電腦及週邊設備類指數): Locator.wait_for: Timeout 15000ms exceeded.
+Call log:
+  - waiting for locator("input.rounded-input[name=\"date\"]").first
+
+t26 (光電類指數): Locator.wait_for: Timeout 15000ms exceeded.
+Call log:
+  - waiting for locator("input.rounded-input[name=\"date\"]").first
+
+t27 (通信網路類指數): Locator.wait_for: Timeout 15000ms exceeded.
+Call log:
+  - waiting for locator("input.rounded-input[name=\"date\"]").first
+
+t28 (電子零組件類指數): Locator.wait_for: Timeout 15000ms exceeded.
+Call log:
+  - waiting for locator("input.rounded-input[name=\"date\"]").first
+
+t29 (電子通路類指數): Locator.wait_for: Timeout 15000ms exceeded.
+Call log:
+  - waiting for locator("input.rounded-input[name=\"date\"]").first
+
+t30 (資訊服務類指數): Locator.wait_for: Timeout 15000ms exceeded.
+Call log:
+  - waiting for locator("input.rounded-input[name=\"date\"]").first
+
+t31 (其他電子類指數): Locator.wait_for: Timeout 15000ms exceeded.
+Call log:
+  - waiting for locator("input.rounded-input[name=\"date\"]").first
