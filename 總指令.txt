@@ -1,5 +1,34 @@
 # ════════════════════════════════════════════════════
-# 每次開新 PowerShell 視窗，第一步執行這行（全域設定）
+# 手動執行指令請使用 Anaconda Prompt（非一般 PowerShell）
+# 一般 PowerShell 找不到 python；可改用 py，或開 Anaconda Prompt
+# ════════════════════════════════════════════════════
+
+
+GitHub Push（手動）
+# repo：https://github.com/arthererererer/stock_database
+# 排程每天 21:00 自動執行（Task Scheduler: 股票資料庫_每日GitHub_Push）
+
+# 全部變更一次上傳（最常用）
+git add -A
+git commit -m "說明文字"
+git push origin main
+
+# 只上傳特定檔案
+git add 檔案路徑
+git commit -m "說明文字"
+git push origin main
+
+# 只 push（無新 commit，例如上次 commit 沒推成功）
+git push origin main
+
+# 查看哪些檔案有變更
+git status
+
+# 查看 commit 歷史
+git log --oneline
+
+# ════════════════════════════════════════════════════
+# 每次開新視窗，第一步執行這行（設定資料庫連線）
 # ════════════════════════════════════════════════════
 $env:DATABASE_URL = "postgresql://postgres:yourpassword@localhost:5432/postgres"
 
@@ -38,6 +67,17 @@ python "玩股網爬蟲\scrape_monthly_revenue.py" --rolling-months 4 -o "玩股
 
 # 入庫
 python etl\load_wantgoo_monthly_revenue.py --file "玩股網爬蟲\output\月營收_scheduled_latest.csv"
+
+── ISIN 證券清單（股票/ETF/基金/指數/興櫃）──────────────────────────
+# 更新全部清單（月排程 Monthly_task 已自動執行，手動補跑用這行）
+python scripts\scrape_isin_lists.py
+
+# 輸出（Variable_setting\）
+#   上市櫃股票清單.csv  1,900+ 筆（代號,名稱）
+#   興櫃清單.csv        300+  筆（代號,名稱）
+#   ETF清單.csv         300+  筆（代號,名稱,ISIN,上市日期,市場別）
+#   基金清單.csv        4,000+ 筆（代號,名稱,ISIN,發行日期）
+#   指數清單.csv        370+  筆（代號,名稱,ISIN,發行日期）
 
 ── TIP 台灣指數 ────────────────────────────────────────────────────
 # 自動排程（Daily_task 每日 18:00）已包含：爬今日 → 入庫 PostgreSQL
