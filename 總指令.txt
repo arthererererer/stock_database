@@ -16,8 +16,8 @@ net start winnat
 
 
 爬蟲和入庫（自動排程）
-日排程（每日 18:00，Task Scheduler: FinPlatform_DailyFx）  ：.\scheduler\run_daily_crawl_etl.ps1
-月排程（每月 15 日 15:00，Task Scheduler: FinPlatform_MonthlyWantgoo）：.\scheduler\run_monthly_crawl_etl.ps1
+日排程（每日 18:00，Task Scheduler: Daily_task）   ：.\scheduler\run_daily_crawl_etl.ps1
+月排程（每月 15 日 15:00，Task Scheduler: Monthly_task）：.\scheduler\run_monthly_crawl_etl.ps1
 
 
 爬蟲和入庫（手動）
@@ -40,14 +40,23 @@ python "玩股網爬蟲\scrape_monthly_revenue.py" --rolling-months 4 -o "玩股
 python etl\load_wantgoo_monthly_revenue.py --file "玩股網爬蟲\output\月營收_scheduled_latest.csv"
 
 ── TIP 台灣指數 ────────────────────────────────────────────────────
-# 爬蟲（指定區間）
+# 自動排程（Daily_task 每日 18:00）已包含：爬今日 → 入庫 PostgreSQL
+# all_history.csv 不再由排程維護，僅手動補載時使用。
+
+# 手動補載（指定日期區間）：兩步驟依序執行
+# 步驟 1：爬蟲
 python "TIP台灣指數爬蟲\scrape_tip_history.py" --all --start 2026/01/01 --end 2026/05/19 -o "TIP台灣指數爬蟲\output\tip_20260101_20260519.csv"
 
-# 合併入歷史檔
-python "TIP台灣指數爬蟲\merge_daily_into_all_history.py" "TIP台灣指數爬蟲\output\tip_20260101_20260519.csv"
+# 步驟 2：入庫
+python etl\load_tip.py --file "TIP台灣指數爬蟲\output\tip_20260101_20260519.csv"
 
-# 只重爬失敗的指數
+# 只重爬失敗的指數（上次爬蟲產生 .errors.txt 後用，再跑步驟 2 入庫）
 python "TIP台灣指數爬蟲\scrape_tip_history.py" --retry-errors "TIP台灣指數爬蟲\output\tip_20260101_20260519.errors.txt" --start 2026/01/01 --end 2026/05/19
+
+# 如需從 all_history.csv 整批補入資料庫（首次建庫用）
+# 先手動執行合併：python "TIP台灣指數爬蟲\merge_daily_into_all_history.py" <csv>
+# 再入庫：
+python etl\load_tip.py
 
 
 TEJ 入庫

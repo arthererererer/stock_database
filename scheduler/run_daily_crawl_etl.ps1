@@ -16,9 +16,8 @@ $StartDate = (Get-Date).AddDays(-7).ToString("yyyy-MM-dd")
 $EndDate   = (Get-Date).ToString("yyyy-MM-dd")
 $FxCsv     = Join-Path $ProjectRoot "investing.com爬蟲\fx_history_combined.csv"
 
-$TipDate    = (Get-Date).ToString("yyyyMMdd")
-$TipCsv     = Join-Path $ProjectRoot "TIP台灣指數爬蟲\output\tip_${TipDate}_${TipDate}.csv"
-$TipAllHist = Join-Path $ProjectRoot "TIP台灣指數爬蟲\output\all_history.csv"
+$TipDate = (Get-Date).ToString("yyyyMMdd")
+$TipCsv  = Join-Path $ProjectRoot "TIP台灣指數爬蟲\output\tip_${TipDate}_${TipDate}.csv"
 
 $dailyTasks = @(
 
@@ -42,12 +41,6 @@ $dailyTasks = @(
         Name   = "TIP 指數爬蟲（今日）"
         Script = Join-Path $ProjectRoot "TIP台灣指數爬蟲\scrape_tip_history.py"
         Args   = @("--all", "--today", "-o", $TipCsv)
-    },
-
-    @{
-        Name   = "TIP 指數合併 all_history"
-        Script = Join-Path $ProjectRoot "TIP台灣指數爬蟲\merge_daily_into_all_history.py"
-        Args   = @($TipCsv, "-o", $TipAllHist)
     },
 
     @{

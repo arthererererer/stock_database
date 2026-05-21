@@ -89,12 +89,9 @@ def _fetch(mode: int) -> list[dict]:
     return records
 
 
-def _write_csv(path: Path, fieldnames: list[str], rows: list[dict],
-               bom: bool = True) -> None:
+def _write_csv(path: Path, fieldnames: list[str], rows: list[dict]) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
-    mode = "w"
-    encoding = "utf-8-sig" if bom else "utf-8"
-    with open(path, mode, newline="", encoding=encoding) as f:
+    with open(path, "w", newline="", encoding="utf-8") as f:
         writer = csv.DictWriter(f, fieldnames=fieldnames, extrasaction="ignore")
         writer.writeheader()
         writer.writerows(rows)
@@ -103,7 +100,7 @@ def _write_csv(path: Path, fieldnames: list[str], rows: list[dict],
 
 # ── 主流程 ────────────────────────────────────────────────────────────────────
 
-def run(output_dir: Path) -> None:
+def run(output_dirs: list[Path]) -> None:
     print("=== ISIN 證券清單爬蟲 ===")
 
     # ── mode=2 上市 ──────────────────────────────────────────────────────────
@@ -147,22 +144,14 @@ def run(output_dir: Path) -> None:
     stocks_dedup.sort(key=lambda x: x["代號"])
 
     print("寫出 上市櫃股票清單.csv（上市股票 + 上櫃股票）")
-    _write_csv(
-        output_dir / "上市櫃股票清單.csv",
-        fieldnames=["代號", "名稱"],
-        rows=stocks_dedup,
-        bom=True,  # 保持與原格式一致（有 BOM）
-    )
+    for d in output_dirs:
+        _write_csv(d / "上市櫃股票清單.csv", fieldnames=["代號", "名稱"], rows=stocks_dedup)
 
     # ── 興櫃清單.csv ─────────────────────────────────────────────────────────
     emerge_sorted = sorted(mode5, key=lambda x: x["代號"])
     print("寫出 興櫃清單.csv")
-    _write_csv(
-        output_dir / "興櫃清單.csv",
-        fieldnames=["代號", "名稱"],
-        rows=emerge_sorted,
-        bom=True,
-    )
+    for d in output_dirs:
+        _write_csv(d / "興櫃清單.csv", fieldnames=["代號", "名稱"], rows=emerge_sorted)
 
     # ── ETF清單.csv ──────────────────────────────────────────────────────────
     etf_listed = [r for r in mode2 if r["category"] == "ETF"]
@@ -177,57 +166,33 @@ def run(output_dir: Path) -> None:
     etf_all.sort(key=lambda x: x["代號"])
 
     print("寫出 ETF清單.csv（上市 ETF + 上櫃 ETF）")
-    _write_csv(
-        output_dir / "ETF清單.csv",
-        fieldnames=["代號", "名稱", "ISIN", "上市日期", "市場別"],
-        rows=[
-            {
-                "代號": r["代號"],
-                "名稱": r["名稱"],
-                "ISIN": r["ISIN"],
-                "上市日期": r["日期"],
-                "市場別": r["市場別"],
-            }
-            for r in etf_all
-        ],
-        bom=True,
-    )
+    etf_rows = [
+        {"代號": r["代號"], "名稱": r["名稱"], "ISIN": r["ISIN"],
+         "上市日期": r["日期"], "市場別": r["市場別"]}
+        for r in etf_all
+    ]
+    for d in output_dirs:
+        _write_csv(d / "ETF清單.csv", fieldnames=["代號", "名稱", "ISIN", "上市日期", "市場別"], rows=etf_rows)
 
     # ── 基金清單.csv ─────────────────────────────────────────────────────────
     funds_sorted = sorted(mode7, key=lambda x: x["代號"])
     print("寫出 基金清單.csv")
-    _write_csv(
-        output_dir / "基金清單.csv",
-        fieldnames=["代號", "名稱", "ISIN", "發行日期"],
-        rows=[
-            {
-                "代號": r["代號"],
-                "名稱": r["名稱"],
-                "ISIN": r["ISIN"],
-                "發行日期": r["日期"],
-            }
-            for r in funds_sorted
-        ],
-        bom=True,
-    )
+    fund_rows = [
+        {"代號": r["代號"], "名稱": r["名稱"], "ISIN": r["ISIN"], "發行日期": r["日期"]}
+        for r in funds_sorted
+    ]
+    for d in output_dirs:
+        _write_csv(d / "基金清單.csv", fieldnames=["代號", "名稱", "ISIN", "發行日期"], rows=fund_rows)
 
     # ── 指數清單.csv ─────────────────────────────────────────────────────────
     indices_sorted = sorted(mode11, key=lambda x: x["代號"])
     print("寫出 指數清單.csv")
-    _write_csv(
-        output_dir / "指數清單.csv",
-        fieldnames=["代號", "名稱", "ISIN", "發行日期"],
-        rows=[
-            {
-                "代號": r["代號"],
-                "名稱": r["名稱"],
-                "ISIN": r["ISIN"],
-                "發行日期": r["日期"],
-            }
-            for r in indices_sorted
-        ],
-        bom=True,
-    )
+    index_rows = [
+        {"代號": r["代號"], "名稱": r["名稱"], "ISIN": r["ISIN"], "發行日期": r["日期"]}
+        for r in indices_sorted
+    ]
+    for d in output_dirs:
+        _write_csv(d / "指數清單.csv", fieldnames=["代號", "名稱", "ISIN", "發行日期"], rows=index_rows)
 
     print()
     print("完成。")
@@ -237,14 +202,22 @@ def run(output_dir: Path) -> None:
 
 if __name__ == "__main__":
     project_root = Path(__file__).resolve().parent.parent
-    default_out  = project_root / "Variable_setting"
+
+    # 預設同時寫入兩個目錄
+    DEFAULT_OUTPUT_DIRS = [
+        project_root / "Variable_setting",
+        Path(r"C:\Users\User\Desktop\每日報告區\Variable_setting"),
+    ]
 
     parser = argparse.ArgumentParser(description="TWSE ISIN 證券清單爬蟲")
     parser.add_argument(
         "--output-dir", "-o",
-        default=str(default_out),
-        help=f"輸出目錄（預設：{default_out}）",
+        action="append",
+        dest="output_dirs",
+        metavar="DIR",
+        help="輸出目錄（可重複指定多個）；未指定時使用預設雙目錄",
     )
     args = parser.parse_args()
 
-    run(Path(args.output_dir))
+    output_dirs = [Path(d) for d in args.output_dirs] if args.output_dirs else DEFAULT_OUTPUT_DIRS
+    run(output_dirs)
