@@ -359,11 +359,15 @@ def calc_stock_persist_prob(stock_df: pd.DataFrame) -> pd.DataFrame:
     """
     計算每檔股票 P(高持續性 | 振幅大事件)，使用該股過去振幅大事件中高持續性比例。
     避免前視偏誤：對 T 日事件，僅用 T 日之前之歷史。
-    輸出：stock_code, stock_persist_prob（該股最新值）
+    輸出：
+      stock_code, stock_persist_prob（該股最新估計值）
+      stock_persist_hi_n：用於估計之最後一次「歷史振幅大事件」中，高持續性事件筆數
+      stock_persist_amp_n：同上段歷史之振幅大事件總次數（分母，≥5 才有機率）
     """
+    cols = ["stock_code", "stock_persist_prob", "stock_persist_hi_n", "stock_persist_amp_n"]
     evt = stock_df[stock_df["amp_big"] == 1].copy()
     if len(evt) < 10:
-        return pd.DataFrame(columns=["stock_code", "stock_persist_prob"])
+        return pd.DataFrame(columns=cols)
 
     p80 = evt["persist_amp"].quantile(PERSIST_HI_PCT)
     evt["high_persist"] = (evt["persist_amp"] >= p80).astype(int)
@@ -381,7 +385,13 @@ def calc_stock_persist_prob(stock_df: pd.DataFrame) -> pd.DataFrame:
         sub["stock_persist_prob"] = probs
         last = sub.iloc[-1]
         if not np.isnan(last["stock_persist_prob"]):
-            rows.append({"stock_code": code, "stock_persist_prob": round(last["stock_persist_prob"], 4)})
+            prior = sub.iloc[:-1]
+            rows.append({
+                "stock_code": code,
+                "stock_persist_prob": round(last["stock_persist_prob"], 4),
+                "stock_persist_hi_n": int(prior["high_persist"].sum()),
+                "stock_persist_amp_n": int(len(prior)),
+            })
 
     return pd.DataFrame(rows)
 
@@ -530,17 +540,16 @@ def _hist_3panel(events: pd.DataFrame, cols: list, title: str, xlabel: str) -> s
     return fig.to_html(full_html=False, include_plotlyjs=False, config={"responsive": True})
 
 
-def _evolution_chart(events_sub: pd.DataFrame, value_cols: list, title: str, color: str,
-                    ylabel: str, pct_scale: bool = False) -> go.Figure:
-    """T~T+20 演化圖：中位數連線 + P25~P75 灰階面積。通用函數。"""
+def _evolution_subplot_body(
+    events_sub: pd.DataFrame, value_cols: list, pct_scale: bool,
+) -> tuple[list, list, list] | None:
+    """回傳 (med, p25, p75) 已乘上 pct 因子；資料無效則 None。"""
     missing = [c for c in value_cols if c not in events_sub.columns]
     if missing:
-        return go.Figure().add_annotation(text=f"缺少欄位：{missing[:3]}", showarrow=False)
+        return None
     sub = events_sub[value_cols].dropna(how="all")
     if len(sub) < 5:
-        return go.Figure().add_annotation(text="樣本不足", showarrow=False)
-
-    x = list(range(21))
+        return None
     med = [sub[c].median() for c in value_cols]
     p25 = [sub[c].quantile(0.25) for c in value_cols]
     p75 = [sub[c].quantile(0.75) for c in value_cols]
@@ -548,42 +557,123 @@ def _evolution_chart(events_sub: pd.DataFrame, value_cols: list, title: str, col
     med = [v * factor for v in med]
     p25 = [v * factor for v in p25]
     p75 = [v * factor for v in p75]
+    return med, p25, p75
 
-    fig = go.Figure()
-    fig.add_trace(go.Scatter(x=x, y=p25, mode="lines", name="P25",
-        line=dict(color="rgba(128,128,128,0.5)", width=1, dash="dot"), fill=None))
-    fig.add_trace(go.Scatter(x=x, y=p75, mode="lines", name="P75",
-        line=dict(color="rgba(128,128,128,0.5)", width=1, dash="dot"),
-        fill="tonexty", fillcolor="rgba(128,128,128,0.25)"))
-    fig.add_trace(go.Scatter(x=x, y=med, mode="lines+markers", name="中位數",
-        line=dict(color=color, width=2.5), marker=dict(size=6, color=color)))
+
+def _evolution_chart_pair(
+    events_left: pd.DataFrame,
+    events_right: pd.DataFrame,
+    value_cols: list,
+    title_left: str,
+    title_right: str,
+    color_left: str,
+    color_right: str,
+    ylabel: str,
+    pct_scale: bool = False,
+) -> go.Figure:
+    """兩組事件並排之 T~T+20 演化圖（各子圖：中位數 + P25~P75 灰階面積），共用同一列版面。"""
+    fig = make_subplots(
+        rows=1, cols=2,
+        subplot_titles=[title_left, title_right],
+        horizontal_spacing=0.06,
+    )
+    bodies = [
+        _evolution_subplot_body(events_left, value_cols, pct_scale),
+        _evolution_subplot_body(events_right, value_cols, pct_scale),
+    ]
+    x = list(range(21))
+    tickvals = list(range(0, 21, 2))
+    ticktext = [f"T+{k}" if k > 0 else "T" for k in range(0, 21, 2)]
+
+    for col_idx, (body, color, med_name) in enumerate(
+        zip(bodies, [color_left, color_right], ["高持續性·中位數", "一般·中位數"], strict=True),
+        start=1,
+    ):
+        if body is None:
+            fig.add_annotation(
+                text="樣本不足或缺少欄位",
+                x=10, y=0, showarrow=False,
+                row=1, col=col_idx,
+                font=dict(color=_MUTED, size=12),
+            )
+            continue
+        med, p25, p75 = body
+        show_band = col_idx == 1
+        fig.add_trace(
+            go.Scatter(
+                x=x, y=p25, mode="lines", name="P25",
+                line=dict(color="rgba(128,128,128,0.5)", width=1, dash="dot"), fill=None,
+                legendgroup="p25", showlegend=show_band,
+            ),
+            row=1, col=col_idx,
+        )
+        fig.add_trace(
+            go.Scatter(
+                x=x, y=p75, mode="lines", name="P75",
+                line=dict(color="rgba(128,128,128,0.5)", width=1, dash="dot"),
+                fill="tonexty", fillcolor="rgba(128,128,128,0.25)",
+                legendgroup="p75", showlegend=show_band,
+            ),
+            row=1, col=col_idx,
+        )
+        fig.add_trace(
+            go.Scatter(
+                x=x, y=med, mode="lines+markers", name=med_name,
+                line=dict(color=color, width=2.5), marker=dict(size=5, color=color),
+                legendgroup=f"med{col_idx}", showlegend=True,
+            ),
+            row=1, col=col_idx,
+        )
+
     fig.update_layout(
-        **_base_layout(title=dict(text=title, font=dict(size=13, color=_TEXT)),
-            height=300, showlegend=True, legend=dict(orientation="h", yanchor="top", y=1.15)))
-    fig.update_xaxes(title_text="交易日", tickvals=list(range(0, 21, 2)),
-                     ticktext=[f"T+{k}" if k > 0 else "T" for k in range(0, 21, 2)])
-    fig.update_yaxes(title_text=ylabel, ticksuffix="%" if pct_scale else "")
+        **_base_layout(
+            height=340,
+            showlegend=True,
+            legend=dict(orientation="h", yanchor="top", y=-0.14, x=0.5, xanchor="center"),
+            margin=dict(t=56, r=16, b=72, l=52),
+        )
+    )
+    # make_subplots 會產生 xaxis / xaxis2、yaxis / yaxis2；僅對 layout.xaxis 設樣式不會套用到第二子圖，
+    # 第二圖易残留預設白格線。以下不含 row/col，一次更新「全部」X／Y 軸。
+    _x_style = dict(
+        title_text="交易日",
+        tickvals=tickvals,
+        ticktext=ticktext,
+        showgrid=True,
+        gridwidth=1,
+        gridcolor=_BORDER,
+        showline=True,
+        linewidth=1,
+        linecolor=_BORDER,
+        mirror=False,
+        tickfont=dict(color=_MUTED),
+        zeroline=True,
+        zerolinewidth=1,
+        zerolinecolor=_BORDER,
+    )
+    _y_style = dict(
+        title_text=ylabel,
+        ticksuffix="%" if pct_scale else "",
+        showgrid=True,
+        gridwidth=1,
+        gridcolor=_BORDER,
+        showline=True,
+        linewidth=1,
+        linecolor=_BORDER,
+        mirror=False,
+        tickfont=dict(color=_MUTED),
+        zeroline=True,
+        zerolinewidth=1,
+        zerolinecolor=_BORDER,
+    )
+    fig.update_xaxes(**_x_style)
+    fig.update_yaxes(**_y_style)
+    # 百分比類：維持與單圖時相同之 y=0 虛線參考（zeroline 為實線，改以 hline 標示）
     if pct_scale:
-        fig.add_hline(y=0, line_width=1, line_dash="dash", line_color="#6e7681")
+        fig.update_yaxes(zeroline=False)
+        fig.add_hline(y=0, line_width=1, line_dash="dash", line_color="#6e7681", row=1, col=1)
+        fig.add_hline(y=0, line_width=1, line_dash="dash", line_color="#6e7681", row=1, col=2)
     return fig
-
-
-def _cum_amp_evolution_chart(events_sub: pd.DataFrame, title: str, color: str) -> go.Figure:
-    """單一組別 T~T+20 累積積分演化圖。"""
-    return _evolution_chart(events_sub, [f"cum_amp_{k}" for k in range(21)],
-                           title, color, "累積積分", pct_scale=False)
-
-
-def _cum_ret_evolution_chart(events_sub: pd.DataFrame, title: str, color: str) -> go.Figure:
-    """單一組別 T~T+20 累積報酬演化圖。"""
-    return _evolution_chart(events_sub, [f"cum_ret_{k}" for k in range(21)],
-                           title, color, "累積報酬%", pct_scale=True)
-
-
-def _cum_exc_evolution_chart(events_sub: pd.DataFrame, title: str, color: str) -> go.Figure:
-    """單一組別 T~T+20 累積超額報酬（vs 大盤）演化圖。"""
-    return _evolution_chart(events_sub, [f"cum_exc_{k}" for k in range(21)],
-                           title, color, "累積超額報酬%", pct_scale=True)
 
 
 def _persist_descriptive_stats(hi_evt: pd.DataFrame, lo_evt: pd.DataFrame, flag_col: str) -> str:
@@ -679,7 +769,7 @@ def _persist_logit_model(events: pd.DataFrame, score_col: str, threshold: float,
 
 def _persist_score_section(events: pd.DataFrame, score_col: str, hi_pct: float, n_total_events: int,
                           event_type_label: str = "振幅大事件", flag_col: str = "amp_big") -> str:
-    """1.3 / 2.3 振幅持續性積分分析：高/一般事件 T~T+20 積分演化圖 + 高/一般 T+20 箱型圖。"""
+    """1.3 / 2.3 振幅持續性積分分析：高 vs 一般之 T~T+20 演化以左右並列子圖呈現（積分／報酬／超額報酬各一圖）+ T+20 箱型圖。"""
     s = events[score_col].dropna()
     if len(s) < 10:
         return "<p class='no-data'>樣本不足</p>"
@@ -708,39 +798,21 @@ def _persist_score_section(events: pd.DataFrame, score_col: str, hi_pct: float, 
     n_hi = len(hi_ret)
     n_lo = len(lo_ret)
 
-    # 1. 高持續性事件 T~T+20 積分演化圖
-    fig_hi = _cum_amp_evolution_chart(
-        hi_evt, f"高持續性事件（≥P{int(hi_pct*100)}，共 {n_hi:,} 件）T~T+20 積分演化",
-        "#d29922",
+    cols_amp = [f"cum_amp_{k}" for k in range(21)]
+    cols_ret = [f"cum_ret_{k}" for k in range(21)]
+    cols_exc = [f"cum_exc_{k}" for k in range(21)]
+    sub_hi = f"高持續性事件（≥P{int(hi_pct*100)}，共 {n_hi:,} 件）"
+    sub_lo = f"一般事件（<P{int(hi_pct*100)}，共 {n_lo:,} 件）"
+    fig_amp_pair = _evolution_chart_pair(
+        hi_evt, lo_evt, cols_amp, sub_hi, sub_lo, "#d29922", "#8b949e", "累積積分", False,
     )
-    # 2. 一般事件 T~T+20 積分演化圖
-    fig_lo = _cum_amp_evolution_chart(
-        lo_evt, f"一般事件（<P{int(hi_pct*100)}，共 {n_lo:,} 件）T~T+20 積分演化",
-        "#8b949e",
+    fig_cum_pair = _evolution_chart_pair(
+        hi_evt, lo_evt, cols_ret, sub_hi, sub_lo, "#d29922", "#8b949e", "累積報酬%", True,
     )
-    # 3. 高持續性事件 T~T+20 累積報酬演化圖
-    fig_hi_cum = _evolution_chart(
-        hi_evt, [f"cum_ret_{k}" for k in range(21)],
-        f"高持續性事件（≥P{int(hi_pct*100)}，共 {n_hi:,} 件）T~T+20 累積報酬演化",
-        "#d29922", "累積報酬%", pct_scale=True,
+    fig_exc_pair = _evolution_chart_pair(
+        hi_evt, lo_evt, cols_exc, sub_hi, sub_lo, "#d29922", "#8b949e", "累積超額報酬%", True,
     )
-    # 4. 一般事件 T~T+20 累積報酬演化圖
-    fig_lo_cum = _evolution_chart(
-        lo_evt, [f"cum_ret_{k}" for k in range(21)],
-        f"一般事件（<P{int(hi_pct*100)}，共 {n_lo:,} 件）T~T+20 累積報酬演化",
-        "#8b949e", "累積報酬%", pct_scale=True,
-    )
-    # 5. 高持續性事件 T~T+20 累積超額報酬演化圖
-    fig_hi_exc = _cum_exc_evolution_chart(
-        hi_evt, f"高持續性事件（≥P{int(hi_pct*100)}，共 {n_hi:,} 件）T~T+20 累積超額報酬演化",
-        "#d29922",
-    )
-    # 6. 一般事件 T~T+20 累積超額報酬演化圖
-    fig_lo_exc = _cum_exc_evolution_chart(
-        lo_evt, f"一般事件（<P{int(hi_pct*100)}，共 {n_lo:,} 件）T~T+20 累積超額報酬演化",
-        "#8b949e",
-    )
-    # 7. 高持續性 vs 一般事件 T+20 超額累積報酬箱型圖
+    # 高持續性 vs 一般事件 T+20 超額累積報酬箱型圖
     fig_box = go.Figure()
     fig_box.add_trace(go.Box(y=hi_ret.values * 100, name="高持續性", marker_color="#d29922",
                              boxpoints=False, boxmean=False))
@@ -757,7 +829,7 @@ def _persist_score_section(events: pd.DataFrame, score_col: str, hi_pct: float, 
     stats = {"高持續性": _desc_stats(hi_ret), "一般事件": _desc_stats(lo_ret)}
     tbl_html = "<p style='margin-top:12px; font-size:.85rem; color:var(--muted);'>T+20 累積超額報酬（vs 大盤），公式 (1+R_s)/(1+R_m)−1</p>" + _stats_table_html(stats)
     _chart = lambda f: f.to_html(full_html=False, include_plotlyjs=False, config={"responsive": True})
-    _wrap = "min-height:340px; margin-bottom:16px;"
+    _wrap = "min-height:400px; margin-bottom:16px;"
     persist_note = (
         f"分析對象：<b>所有{event_type_label}</b>（共 {n_total_events:,} 件）。高持續性 ≥ P{int(hi_pct*100)}：{n_hi:,} 件；一般 &lt; P{int(hi_pct*100)}：{n_lo:,} 件。"
         f"累積積分 = Σ 異常振幅(T+j)，j=1..k；累積報酬 = 持有 T+1 至 T+k 之累積報酬；累積超額報酬 = (1+R_s)/(1+R_m)−1 vs 大盤。橫軸 T~T+20。"
@@ -768,15 +840,12 @@ def _persist_score_section(events: pd.DataFrame, score_col: str, hi_pct: float, 
     logit_html = _persist_logit_model(events, score_col, threshold, flag_col)
     return (
         f"<p class='rpt-note' style='margin-bottom:12px;'>{persist_note}</p>"
-        f"<h4 style='margin:16px 0 8px; font-size:.95rem;'>積分演化</h4>"
-        f"<div class='chart-wrap' style='{_wrap}'>{_chart(fig_hi)}</div>"
-        f"<div class='chart-wrap' style='{_wrap}'>{_chart(fig_lo)}</div>"
-        f"<h4 style='margin:16px 0 8px; font-size:.95rem;'>累積報酬演化</h4>"
-        f"<div class='chart-wrap' style='{_wrap}'>{_chart(fig_hi_cum)}</div>"
-        f"<div class='chart-wrap' style='{_wrap}'>{_chart(fig_lo_cum)}</div>"
-        f"<h4 style='margin:16px 0 8px; font-size:.95rem;'>累積超額報酬演化</h4>"
-        f"<div class='chart-wrap' style='{_wrap}'>{_chart(fig_hi_exc)}</div>"
-        f"<div class='chart-wrap' style='{_wrap}'>{_chart(fig_lo_exc)}</div>"
+        f"<h4 style='margin:16px 0 8px; font-size:.95rem;'>積分演化（T~T+20，併列）</h4>"
+        f"<div class='chart-wrap' style='{_wrap}'>{_chart(fig_amp_pair)}</div>"
+        f"<h4 style='margin:16px 0 8px; font-size:.95rem;'>累積報酬演化（T~T+20，併列）</h4>"
+        f"<div class='chart-wrap' style='{_wrap}'>{_chart(fig_cum_pair)}</div>"
+        f"<h4 style='margin:16px 0 8px; font-size:.95rem;'>累積超額報酬演化（T~T+20，併列）</h4>"
+        f"<div class='chart-wrap' style='{_wrap}'>{_chart(fig_exc_pair)}</div>"
         f"<h4 style='margin:16px 0 8px; font-size:.95rem;'>高持續性 vs 一般 T+20 超額報酬</h4>"
         f"<div class='chart-wrap' style='min-height:360px; margin-bottom:12px;'>{_chart(fig_box)}</div>{tbl_html}"
         f"<h4 style='margin:20px 0 8px; font-size:.95rem;'>高 vs 一般持續性：T 日特徵敘述統計比較</h4>{desc_html}"
@@ -1476,7 +1545,8 @@ def main():
         try:
             consolidated = pd.read_csv(CONSOLIDATED_CSV, encoding="utf-8-sig")
             if "stock_code" in consolidated.columns and len(prob_df) > 0:
-                consolidated = consolidated.drop(columns=["stock_persist_prob"], errors="ignore")
+                for c in ("stock_persist_prob", "stock_persist_hi_n", "stock_persist_amp_n"):
+                    consolidated = consolidated.drop(columns=[c], errors="ignore")
                 consolidated = consolidated.merge(prob_df, on="stock_code", how="left")
                 consolidated.to_csv(CONSOLIDATED_CSV, index=False, encoding="utf-8-sig")
         except Exception as e:

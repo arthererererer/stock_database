@@ -54,14 +54,52 @@
   <!-- ════ 大盤監控區 ════ -->
   <section id="tab-market" class="tab-content active">
 
-    <!-- 1. 成交量位階儀表板 -->
-    <div class="section">
+    <!-- 類股表現：市值占比橫條 + 累積報酬折線（依 Variable_setting/類股清單.csv） -->
+    <div class="section sector-performance-section">
       <div class="section-header">
-        <h2 class="section-title">今日成交量位階</h2>
-        <span class="section-sub">最新一日成交金額在滾動一年資料中的百分位數</span>
+        <h2 class="section-title">類股表現（類股清單）</h2>
       </div>
-      <div class="gauges-row" id="gauges-row">
-        <!-- 動態產生 -->
+      <div class="sector-panel-charts">
+        <div id="chart-sector-bars" class="chart-sector-bar"></div>
+        <div id="chart-sector-lines" class="chart-sector-line"></div>
+      </div>
+      <div class="sector-institutional-block">
+        <div class="sector-institutional-head">
+          <h3 class="sector-inst-subtitle">三大法人</h3>
+        </div>
+        <p class="sector-inst-note" id="sector-inst-note"></p>
+        <div class="sector-institutional-charts">
+          <div id="chart-sector-inst-foreign" class="chart-sector-inst-line"></div>
+          <div id="chart-sector-inst-trust" class="chart-sector-inst-line"></div>
+          <div id="chart-sector-inst-dealer" class="chart-sector-inst-line"></div>
+        </div>
+      </div>
+      <div class="sector-valuation-row">
+        <div class="sector-val-panel">
+          <div id="chart-sector-pe" class="chart-sector-val"></div>
+          <div id="table-sector-pe" class="sector-val-table-wrap"></div>
+        </div>
+        <div class="sector-val-panel">
+          <div id="chart-sector-pb" class="chart-sector-pb"></div>
+          <div id="table-sector-pb" class="sector-val-table-wrap"></div>
+        </div>
+      </div>
+      <div class="sector-panel-toolbar">
+        <input type="text" id="sector-filter-input" class="sector-filter-input" placeholder="篩選類股名稱…" autocomplete="off" />
+      </div>
+      <div class="sector-panel-controls">
+        <div class="spc-col spc-col-sectors">
+          <div class="spc-col-title">累積報酬與三大法人折線：請勾選類股（可展開調整成分）或加入比較個股</div>
+          <div id="sector-line-sector-checks" class="spc-check-scroll"></div>
+        </div>
+        <div class="spc-col spc-col-stocks">
+          <div class="spc-col-title">比較個股</div>
+          <div class="spc-stock-add-row">
+            <input type="text" id="sector-compare-stock-input" class="sector-filter-input" placeholder="四位代碼，多檔以逗號分隔" autocomplete="off" />
+            <button type="button" class="btn-apply" id="sector-compare-add">加入</button>
+          </div>
+          <div id="sector-line-stock-tags" class="spc-stock-tags"></div>
+        </div>
       </div>
     </div>
 
@@ -77,69 +115,50 @@
       <button class="btn-preset active" data-months="12">近1年</button>
     </div>
 
-    <!-- 特徵溢酬監控（月再平衡 tercile LS） -->
-    <div class="section">
-      <div class="section-header">
-        <h2 class="section-title">特徵溢酬監控</h2>
-        <span class="section-sub">
-          月再平衡（月末最後交易日分組、次一交易日起持有）、雙重排序後 tercile 高減低之等權 long–short（日超額報酬％）。
-          可對照 Y9999 加權指數超額；與日頻 <code>因子報酬.csv</code> 之因子投組定義不同。
-        </span>
+    <div class="charts-grid-2col">
+      <!-- 合併廣度滾動標準差（左）＋ 每日振幅大個股比例（右），同一列 -->
+      <div class="section section-chart-fullrow">
+        <div class="section-header">
+          <h2 class="section-title">合併廣度滾動標準差／每日振幅大個股比例</h2>
+          <span class="section-sub">左：σ<sub>t</sub> = std(過去 <strong>10</strong> 交易日之合併廣度 <em>B</em>)，<em>B</em> =（上漲−下跌）÷ 總家數 ×100（與日期篩選區間一致；前 9 個交易日為 null）。右：振幅大事件個股佔全體比例（%）；圖與 JSON 需先產生報告 a（<strong>啟動 app 不必</strong>，僅此區塊依賴該檔）。下方相關係數預設依「時間範圍」與滯後 ±20 交易日；可勾選改為<strong>全樣本</strong>交集。</span>
+        </div>
+        <div class="amp-vol-two-col">
+          <div class="amp-vol-cell">
+            <div class="breadth-chart-title">合併廣度 10 日滾動標準差（Rolling Std of Breadth）</div>
+            <div id="chart-breadth-volatility" class="chart-full chart-amp-vol-half"></div>
+          </div>
+          <div class="amp-vol-cell">
+            <div class="breadth-chart-title">每日振幅大個股比例</div>
+            <div id="chart-market-amp" class="chart-full chart-amp-vol-half"></div>
+          </div>
+        </div>
+        <div class="breadth-amp-corr-toolbar">
+          <label class="breadth-amp-corr-fullsample-label">
+            <input type="checkbox" id="breadth-amp-corr-fullsample" />
+            相關係數使用<strong>廣度與振幅 JSON 之全部交集交易日</strong>（忽略上方「時間範圍」；兩圖仍依篩選顯示）
+          </label>
+        </div>
+        <div id="breadth-amp-corr-panel" class="breadth-amp-corr-panel" aria-live="polite"></div>
       </div>
-      <div class="feature-premium-bar" id="feature-premium-bar">
-        <span class="fp-item"><label for="fp-dim1">第一維（控制）</label>
-          <select id="fp-dim1" class="fp-select"></select></span>
-        <span class="fp-item"><label for="fp-dim2">第二維（特徵）</label>
-          <select id="fp-dim2" class="fp-select"></select></span>
-        <span class="fp-item fp-check"><label><input type="checkbox" id="fp-show-mkt" checked /> Y9999 超額對照（累積％）</label></span>
-        <span id="fp-status" class="fp-status"></span>
-      </div>
-      <div id="chart-feature-premium" class="chart-full"></div>
-    </div>
 
-    <!-- 3. 委買/委賣力道比 -->
-    <div class="section">
-      <div class="section-header">
-        <h2 class="section-title">委買 / 委賣力道比</h2>
-        <span class="section-sub">總委買數量 ÷ 總委賣數量，大於 1 代表買盤佔優。上市/上櫃為撮合制；興櫃採造市商報價驅動，掛單結構不同，力道比可能顯著差異。</span>
+      <!-- 市場廣度（全市場合併）＋ 漲跌幅區間家數（同列） -->
+      <div class="section section-breadth-panel">
+        <div class="section-header">
+          <h2 class="section-title">市場廣度與漲跌幅分布</h2>
+          <span class="section-sub">左：上市＋上櫃＋興櫃合併之廣度震盪（上漲−下跌）÷ 總家數 ×100。右：TEJ 股價庫最新交易日之個股報酬率％分桶（漲跌停優先讀「漲跌停」欄，否則以 ±9.49% 近似）。</span>
+        </div>
+        <div class="breadth-distribution-row">
+          <div class="breadth-chart-cell">
+            <div class="breadth-chart-title">市場廣度震盪指標</div>
+            <div id="chart-breadth" class="chart-full chart-breadth-half"></div>
+          </div>
+          <div class="breadth-chart-cell">
+            <div class="breadth-chart-title">漲跌幅區間家數</div>
+            <div id="chart-change-dist" class="chart-full chart-breadth-half"></div>
+            <div id="change-dist-summary" class="change-dist-summary"></div>
+          </div>
+        </div>
       </div>
-      <div id="chart-buysell" class="chart-full"></div>
-    </div>
-
-    <!-- 4. 每日振幅大個股比例 -->
-    <div class="section">
-      <div class="section-header">
-        <h2 class="section-title">每日振幅大個股比例</h2>
-        <span class="section-sub">當日振幅大事件個股佔全體比例（%）；需先產生報告 a 才有資料</span>
-      </div>
-      <div id="chart-market-amp" class="chart-full"></div>
-    </div>
-
-    <!-- 5. 成交金額趨勢 -->
-    <div class="section">
-      <div class="section-header">
-        <h2 class="section-title">成交金額趨勢</h2>
-        <span class="section-sub">日成交金額 + 5/20 日移動平均 + 歷史百分位帶（20th / 50th / 80th）</span>
-      </div>
-      <div id="chart-amount" class="chart-full"></div>
-    </div>
-
-    <!-- 6. 資金流向堆疊面積圖 -->
-    <div class="section">
-      <div class="section-header">
-        <h2 class="section-title">資金流向</h2>
-        <span class="section-sub">各市場成交金額佔比隨時間演變（%）</span>
-      </div>
-      <div id="chart-capital-flow" class="chart-full"></div>
-    </div>
-
-    <!-- 7. 市場廣度震盪指標 -->
-    <div class="section">
-      <div class="section-header">
-        <h2 class="section-title">市場廣度震盪指標</h2>
-        <span class="section-sub">（上漲家數 − 下跌家數）÷ 總家數 × 100，正值多頭主導</span>
-      </div>
-      <div id="chart-breadth" class="chart-full"></div>
     </div>
 
   </section><!-- /tab-market -->
@@ -196,57 +215,57 @@
       </div><!-- /intl-selector -->
     </div><!-- /控制面板 -->
 
-    <!-- 圖表 1：基期化指數 -->
-    <div class="section">
-      <div class="section-header">
-        <h2 class="section-title">指數走勢（原始數值）</h2>
-        <span class="section-sub">各指數原始報價數值，不同規模的指數請分配至主軸／副軸</span>
+    <div class="charts-grid-2col">
+      <!-- 圖表 1：基期化指數 -->
+      <div class="section">
+        <div class="section-header">
+          <h2 class="section-title">指數走勢（原始數值）</h2>
+          <span class="section-sub">各指數原始報價數值，不同規模的指數請分配至主軸／副軸</span>
+        </div>
+        <div id="intl-chart-normalized" class="chart-full intl-chart-area"></div>
+        <div class="intl-axis-ctrl-bar">
+          <span class="axis-ctrl-lbl">主軸</span>
+          <input type="number" id="intl-n-y1-min"  class="axis-num-input" placeholder="最小值" step="any" />
+          <span class="dr-sep">~</span>
+          <input type="number" id="intl-n-y1-max"  class="axis-num-input" placeholder="最大值" step="any" />
+          <span class="axis-ctrl-lbl">間距</span>
+          <input type="number" id="intl-n-y1-tick" class="axis-num-input" placeholder="自動"   step="any" />
+          <span class="axis-ctrl-sep">│</span>
+          <span class="axis-ctrl-lbl">副軸</span>
+          <input type="number" id="intl-n-y2-min"  class="axis-num-input" placeholder="最小值" step="any" />
+          <span class="dr-sep">~</span>
+          <input type="number" id="intl-n-y2-max"  class="axis-num-input" placeholder="最大值" step="any" />
+          <span class="axis-ctrl-lbl">間距</span>
+          <input type="number" id="intl-n-y2-tick" class="axis-num-input" placeholder="自動"   step="any" />
+          <button class="btn-apply-axis" data-chart="normalized">套用軸設定</button>
+          <button class="btn-reset-axis" data-chart="normalized">重置</button>
+        </div>
       </div>
-      <div id="intl-chart-normalized" class="chart-full intl-chart-area"></div>
-      <!-- 座標軸刻度控制 -->
-      <div class="intl-axis-ctrl-bar">
-        <span class="axis-ctrl-lbl">主軸</span>
-        <input type="number" id="intl-n-y1-min"  class="axis-num-input" placeholder="最小值" step="any" />
-        <span class="dr-sep">~</span>
-        <input type="number" id="intl-n-y1-max"  class="axis-num-input" placeholder="最大值" step="any" />
-        <span class="axis-ctrl-lbl">間距</span>
-        <input type="number" id="intl-n-y1-tick" class="axis-num-input" placeholder="自動"   step="any" />
-        <span class="axis-ctrl-sep">│</span>
-        <span class="axis-ctrl-lbl">副軸</span>
-        <input type="number" id="intl-n-y2-min"  class="axis-num-input" placeholder="最小值" step="any" />
-        <span class="dr-sep">~</span>
-        <input type="number" id="intl-n-y2-max"  class="axis-num-input" placeholder="最大值" step="any" />
-        <span class="axis-ctrl-lbl">間距</span>
-        <input type="number" id="intl-n-y2-tick" class="axis-num-input" placeholder="自動"   step="any" />
-        <button class="btn-apply-axis" data-chart="normalized">套用軸設定</button>
-        <button class="btn-reset-axis" data-chart="normalized">重置</button>
-      </div>
-    </div>
 
-    <!-- 圖表 2：累積報酬率 -->
-    <div class="section">
-      <div class="section-header">
-        <h2 class="section-title">累積報酬率走勢</h2>
-        <span class="section-sub">自基準日起算台幣計價累積報酬（%）；選單一指數時可分解指數影響與匯率影響；LOCAL 指數不列入本圖</span>
-      </div>
-      <div id="intl-chart-returns" class="chart-full intl-chart-area"></div>
-      <!-- 座標軸刻度控制 -->
-      <div class="intl-axis-ctrl-bar">
-        <span class="axis-ctrl-lbl">主軸</span>
-        <input type="number" id="intl-r-y1-min"  class="axis-num-input" placeholder="最小值" step="any" />
-        <span class="dr-sep">~</span>
-        <input type="number" id="intl-r-y1-max"  class="axis-num-input" placeholder="最大值" step="any" />
-        <span class="axis-ctrl-lbl">間距</span>
-        <input type="number" id="intl-r-y1-tick" class="axis-num-input" placeholder="自動"   step="any" />
-        <span class="axis-ctrl-sep">│</span>
-        <span class="axis-ctrl-lbl">副軸</span>
-        <input type="number" id="intl-r-y2-min"  class="axis-num-input" placeholder="最小值" step="any" />
-        <span class="dr-sep">~</span>
-        <input type="number" id="intl-r-y2-max"  class="axis-num-input" placeholder="最大值" step="any" />
-        <span class="axis-ctrl-lbl">間距</span>
-        <input type="number" id="intl-r-y2-tick" class="axis-num-input" placeholder="自動"   step="any" />
-        <button class="btn-apply-axis" data-chart="returns">套用軸設定</button>
-        <button class="btn-reset-axis" data-chart="returns">重置</button>
+      <!-- 圖表 2：累積報酬率 -->
+      <div class="section">
+        <div class="section-header">
+          <h2 class="section-title">累積報酬率走勢</h2>
+          <span class="section-sub">自基準日起算台幣計價累積報酬（%）；選單一指數時可分解指數影響與匯率影響；LOCAL 指數不列入本圖</span>
+        </div>
+        <div id="intl-chart-returns" class="chart-full intl-chart-area"></div>
+        <div class="intl-axis-ctrl-bar">
+          <span class="axis-ctrl-lbl">主軸</span>
+          <input type="number" id="intl-r-y1-min"  class="axis-num-input" placeholder="最小值" step="any" />
+          <span class="dr-sep">~</span>
+          <input type="number" id="intl-r-y1-max"  class="axis-num-input" placeholder="最大值" step="any" />
+          <span class="axis-ctrl-lbl">間距</span>
+          <input type="number" id="intl-r-y1-tick" class="axis-num-input" placeholder="自動"   step="any" />
+          <span class="axis-ctrl-sep">│</span>
+          <span class="axis-ctrl-lbl">副軸</span>
+          <input type="number" id="intl-r-y2-min"  class="axis-num-input" placeholder="最小值" step="any" />
+          <span class="dr-sep">~</span>
+          <input type="number" id="intl-r-y2-max"  class="axis-num-input" placeholder="最大值" step="any" />
+          <span class="axis-ctrl-lbl">間距</span>
+          <input type="number" id="intl-r-y2-tick" class="axis-num-input" placeholder="自動"   step="any" />
+          <button class="btn-apply-axis" data-chart="returns">套用軸設定</button>
+          <button class="btn-reset-axis" data-chart="returns">重置</button>
+        </div>
       </div>
     </div>
 
@@ -302,56 +321,46 @@
 
       <!-- 副軸資料選擇（季資料） -->
       <div class="stock-overlay-bar" id="stock-overlay-bar">
-        <span class="overlay-label">季資料疊加（副軸）：</span>
+        <span class="overlay-label">季資料疊加至累積報酬圖（副軸）：</span>
         <select id="quarterly-col-select" class="overlay-select">
           <option value="">— 不疊加 —</option>
         </select>
       </div>
     </div><!-- /控制面板 -->
 
-    <!-- 圖表 1：收盤價走勢（+ 可選季資料副軸） -->
-    <div class="section" id="section-stock-price" style="display:none">
-      <div class="section-header">
-        <h2 class="section-title">收盤價走勢</h2>
-        <span class="section-sub" id="stock-price-sub">日收盤價（主軸）＋ 季財務指標（副軸，可選）</span>
+    <!-- 統計圖：兩欄並排（奇數張時最後一張單列全寬） -->
+    <div id="stock-charts-grid" class="stock-charts-grid" style="display:none">
+      <div class="section stock-chart-tile" id="section-stock-return">
+        <div class="section-header">
+          <h2 class="section-title" id="stock-return-title">累積報酬率比較</h2>
+          <span class="section-sub" id="stock-return-sub">以查詢區間起始日為基準（= 100），比較各股相對表現；事件標記（注意／處置／全額交割）依事件 CSV</span>
+        </div>
+        <div id="chart-stock-return" class="chart-full stock-chart-area"></div>
       </div>
-      <div id="chart-stock-price" class="chart-full stock-chart-area"></div>
-    </div>
 
-    <!-- 圖表 2：指數化累積報酬（疊加模式）/ 各股收盤（子圖模式） -->
-    <div class="section" id="section-stock-return" style="display:none">
-      <div class="section-header">
-        <h2 class="section-title" id="stock-return-title">累積報酬率比較</h2>
-        <span class="section-sub" id="stock-return-sub">以查詢區間起始日為基準（= 100），比較各股相對表現</span>
+      <div class="section stock-chart-tile" id="section-stock-amplitude">
+        <div class="section-header">
+          <h2 class="section-title">振幅走勢</h2>
+          <span class="section-sub">高低價差 %（日頻）＋ 20日滾動均值，副軸：董監持股%（月頻）</span>
+        </div>
+        <div id="chart-stock-amplitude" class="chart-full stock-chart-area"></div>
       </div>
-      <div id="chart-stock-return" class="chart-full stock-chart-area"></div>
-    </div>
 
-    <!-- 圖表 3：振幅 + 月董監持股副軸 -->
-    <div class="section" id="section-stock-amplitude" style="display:none">
-      <div class="section-header">
-        <h2 class="section-title">振幅走勢</h2>
-        <span class="section-sub">高低價差 %（日頻）＋ 20日滾動均值，副軸：董監持股%（月頻）</span>
+      <div class="section stock-chart-tile" id="section-stock-chip">
+        <div class="section-header">
+          <h2 class="section-title">法人買賣超</h2>
+          <span class="section-sub">外資 / 投信 / 自營商每日買賣超（張）</span>
+        </div>
+        <div id="chart-stock-chip" class="chart-full stock-chart-area"></div>
       </div>
-      <div id="chart-stock-amplitude" class="chart-full stock-chart-area"></div>
-    </div>
 
-    <!-- 圖表 4：法人籌碼 -->
-    <div class="section" id="section-stock-chip" style="display:none">
-      <div class="section-header">
-        <h2 class="section-title">法人買賣超</h2>
-        <span class="section-sub">外資 / 投信 / 自營商每日買賣超（張）</span>
+      <div class="section stock-chart-tile" id="section-stock-valuation">
+        <div class="section-header">
+          <h2 class="section-title">估值指標</h2>
+          <span class="section-sub">本益比 / 股淨比 / 現金殖利率（日頻）</span>
+        </div>
+        <div id="chart-stock-valuation" class="chart-full stock-chart-area"></div>
       </div>
-      <div id="chart-stock-chip" class="chart-full stock-chart-area"></div>
-    </div>
-
-    <!-- 圖表 5：估值指標 -->
-    <div class="section" id="section-stock-valuation" style="display:none">
-      <div class="section-header">
-        <h2 class="section-title">估值指標</h2>
-        <span class="section-sub">本益比 / 股淨比 / 現金殖利率（日頻）</span>
-      </div>
-      <div id="chart-stock-valuation" class="chart-full stock-chart-area"></div>
     </div>
 
     <!-- 摘要統計表 -->

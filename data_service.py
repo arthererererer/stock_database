@@ -5,6 +5,7 @@ data_service.py
 
 import math
 import os
+import re
 from pathlib import Path
 
 import numpy as np
@@ -12,16 +13,13 @@ import pandas as pd
 
 # ── 資料來源路徑（切換 API 時改這裡）──────────────────────────────────
 BASE_DIR = Path(__file__).resolve().parent
+SECTOR_LIST_CSV = BASE_DIR / "Variable_setting" / "類股清單.csv"
+STOCK_MARKET_CSV = BASE_DIR / "Variable_setting" / "股票市場別.csv"
 DATA_DIR = BASE_DIR / "All_Data" / "日資料" / "大盤統計" / "大盤統計資訊"
+# 由大盤統計衍生、與原始 TEJ 匯出檔分開存放（不覆寫 大盤統計資訊 內檔案）
+UNIFIED_BREADTH_CSV = BASE_DIR / "All_Data" / "日資料" / "大盤統計" / "合併廣度_上市櫃興櫃.csv"
 MARKET_AMP_JSON = BASE_DIR / "All_Data" / "事件資料" / "市場振幅比例.json"
 STOCK_PERSIST_PROB_CSV = BASE_DIR / "All_Data" / "事件資料" / "股票持續性機率.csv"
-BANK_RATE_DIR = BASE_DIR / "All_Data" / "日資料" / "國內銀行利率(日)_國內銀行匯率"
-FACTOR_CHARS_CSV = BASE_DIR / "All_Data" / "事件資料" / "因子特徵與載荷.csv"
-
-# 特徵溢酬監控（雙重排序 tercile LS）— 與 README / PLATFORM_SPEC 1.1 一致
-FEATURE_SORT_COLS = ["規模", "淨值市價比", "益本比", "股利殖利率", "動能", "短期反轉"]
-FEATURE_MIN_TERCILE = 10
-FEATURE_MIN_MV = 100.0
 
 # 數值欄位清單
 NUMERIC_COLS = [
@@ -39,6 +37,14 @@ SECURITY_LABELS = {
     "Y99992 上市-股票": "上市",
 }
 
+# 合併廣度 B 之滾動標準差 σ_t = std(B_{t-n+1},…,B_t) 的視窗長度 n（交易日）
+UNIFIED_BREADTH_STD_WINDOW = 10
+
+# σ 與振幅大比例交叉相關：API 預設滯後區間與單邊上限（交易日）
+BREADTH_AMP_CORR_LAG_DEFAULT_MIN = -20
+BREADTH_AMP_CORR_LAG_DEFAULT_MAX = 20
+BREADTH_AMP_CORR_LAG_ABS_CAP = 60
+
 
 # ── 工具函數 ────────────────────────────────────────────────────────────
 
@@ -51,6 +57,104 @@ def _clean(v):
 
 def _clean_list(lst: list) -> list:
     return [_clean(x) for x in lst]
+
+
+def _rolling_std_last_n_valid(s: pd.Series, n: int) -> pd.Series:
+    """
+    對序列 s 逐日計算「最近 n 個有效（非 NaN）數值」的樣本標準差（ddof=1）。
+    廣度 B 缺值之日不納入視窗；當日若 B 為 NaN，仍可用此前已累積之 n 個有效 B 輸出 σ（若已滿 n 個）。
+    未滿 n 個有效值前回傳 NaN。
+    """
+    if n < 1:
+        raise ValueError("n 須 >= 1")
+    arr = pd.to_numeric(s, errors="coerce").to_numpy(dtype=float)
+    m = len(arr)
+    out = np.empty(m, dtype=float)
+    out[:] = np.nan
+    buf: list[float] = []
+    for i in range(m):
+        v = arr[i]
+        if not math.isnan(v):
+            buf.append(float(v))
+            if len(buf) > n:
+                buf.pop(0)
+        if len(buf) == n:
+            out[i] = float(np.std(buf, ddof=1))
+    return pd.Series(out, index=s.index)
+
+
+def _load_stock_market_map() -> dict[str, str]:
+    """
+    可選：Variable_setting/股票市場別.csv
+    欄位：證券代碼（四位或「代碼 名稱」）、市場（TSE=上市 / OTC=上櫃，大小寫不拘）
+    若檔案不存在或無效則回傳空 dict（三大法人僅能顯示全市場合計）。
+    """
+    if not STOCK_MARKET_CSV.is_file():
+        return {}
+    try:
+        raw = pd.read_csv(STOCK_MARKET_CSV, dtype=str, encoding="utf-8-sig")
+    except Exception:
+        try:
+            raw = pd.read_csv(STOCK_MARKET_CSV, dtype=str, encoding="utf-8")
+        except Exception:
+            return {}
+    if raw.empty:
+        return {}
+    # 欄位名容錯
+    code_col = None
+    mkt_col = None
+    for c in raw.columns:
+        cs = str(c).strip()
+        if cs in ("證券代碼", "代碼", "code"):
+            code_col = c
+        if cs in ("市場", "上市別", "market", "tse_otc"):
+            mkt_col = c
+    if code_col is None:
+        code_col = raw.columns[0]
+    if mkt_col is None or mkt_col == code_col:
+        if len(raw.columns) < 2:
+            return {}
+        mkt_col = raw.columns[1]
+    out: dict[str, str] = {}
+    for _, row in raw.iterrows():
+        cell = row.get(code_col)
+        if cell is None or (isinstance(cell, float) and pd.isna(cell)):
+            continue
+        full = str(cell).strip()
+        m = re.match(r"^(\d{4})\b", full)
+        if not m:
+            continue
+        code = m.group(1)
+        mv = row.get(mkt_col)
+        if mv is None or (isinstance(mv, float) and pd.isna(mv)):
+            continue
+        tag = str(mv).strip().upper()
+        if tag in ("TSE", "上市", "TWSE"):
+            out[code] = "TSE"
+        elif tag in ("OTC", "上櫃", "TPEx", "TPEX"):
+            out[code] = "OTC"
+    return out
+
+
+def _daily_returns_to_cumulative_pct(values: list) -> list:
+    """日報酬率％序列轉為自區間起始之複利累積報酬率％；缺值日不參與複利且該日為 null。"""
+    w = 1.0
+    out: list = []
+    for v in values:
+        if v is None:
+            out.append(None)
+            continue
+        try:
+            x = float(v)
+        except (TypeError, ValueError):
+            out.append(None)
+            continue
+        if math.isnan(x) or math.isinf(x):
+            out.append(None)
+            continue
+        w *= 1.0 + x / 100.0
+        out.append(_clean((w - 1.0) * 100.0))
+    return out
 
 
 def _to_int(v):
@@ -104,6 +208,13 @@ def load_all_data() -> pd.DataFrame:
     combined["date"] = pd.to_datetime(combined["年月日"], format="%Y%m%d", errors="coerce")
     combined.sort_values(["date", "證券代碼"], inplace=True)
     combined.reset_index(drop=True, inplace=True)
+
+    try:
+        p = export_unified_breadth_csv(combined)
+        if p:
+            print(f"[資訊] 已更新合併廣度 CSV：{p}")
+    except OSError as e:
+        print(f"[警告] 合併廣度 CSV 寫入失敗：{e}")
 
     return combined
 
@@ -189,9 +300,164 @@ def get_gauge_data(df: pd.DataFrame) -> list:
     return result
 
 
+def _unified_breadth_daily(df: pd.DataFrame) -> pd.DataFrame | None:
+    """
+    上市＋上櫃＋興櫃：按交易日加總家數，計算廣度 B 與滾動標準差。
+    回傳欄位：date, 上漲家數, 下跌家數, 持平家數, 合併總家數, 廣度震盪, 滾動標準差
+    """
+    need = ["上漲家數", "下跌家數", "持平家數"]
+    if df.empty or not all(c in df.columns for c in need):
+        return None
+    daily = df.groupby("date", sort=True)[need].sum().reset_index()
+    daily["合併總家數"] = daily["上漲家數"] + daily["下跌家數"] + daily["持平家數"]
+    tot = daily["合併總家數"].replace(0, float("nan"))
+    daily["廣度震盪"] = (daily["上漲家數"] - daily["下跌家數"]) / tot * 100
+    w = UNIFIED_BREADTH_STD_WINDOW
+    daily["滾動標準差"] = _rolling_std_last_n_valid(daily["廣度震盪"], w)
+    return daily
+
+
+def export_unified_breadth_csv(df: pd.DataFrame) -> str | None:
+    """
+    將「市場廣度震盪指標」B 與「合併廣度 N 日滾動標準差」寫入 UNIFIED_BREADTH_CSV（UTF-8-BOM）。
+    僅三欄：年月日、市場廣度震盪指標、合併廣度_{N}日滾動標準差（N 見 UNIFIED_BREADTH_STD_WINDOW）。
+    """
+    daily = _unified_breadth_daily(df)
+    if daily is None or daily.empty:
+        return None
+    n = UNIFIED_BREADTH_STD_WINDOW
+    col_sigma = f"合併廣度_{n}日滾動標準差"
+    out = pd.DataFrame({
+        "年月日": daily["date"].dt.strftime("%Y%m%d"),
+        "市場廣度震盪指標": daily["廣度震盪"].round(6),
+        col_sigma: daily["滾動標準差"].round(6),
+    })
+    UNIFIED_BREADTH_CSV.parent.mkdir(parents=True, exist_ok=True)
+    out.to_csv(UNIFIED_BREADTH_CSV, index=False, encoding="utf-8-sig")
+    return str(UNIFIED_BREADTH_CSV)
+
+
+def _compute_unified_breadth_oscillator(filtered: pd.DataFrame) -> dict:
+    """
+    不區分上市／上櫃／興櫃：將同日各證券代碼之上漲、下跌、持平家數加總後計算廣度震盪。
+    """
+    w = UNIFIED_BREADTH_STD_WINDOW
+    daily = _unified_breadth_daily(filtered)
+    if daily is None:
+        return {
+            "label": "上市＋上櫃＋興櫃",
+            "dates": [],
+            "廣度震盪": [],
+            "滾動標準差": [],
+            "滾動標準差視窗": w,
+        }
+
+    return {
+        "label": "上市＋上櫃＋興櫃",
+        "dates": daily["date"].dt.strftime("%Y-%m-%d").tolist(),
+        "廣度震盪": _clean_list(daily["廣度震盪"].tolist()),
+        "滾動標準差": _clean_list(daily["滾動標準差"].tolist()),
+        "滾動標準差視窗": w,
+    }
+
+
+def _classify_return_bucket(r: float, limit_txt: str) -> str | None:
+    """單日報酬率％分桶（漲跌停優先，其次以門檻切分）。"""
+    if math.isnan(r):
+        return None
+    t = (limit_txt or "").strip()
+    if "漲停" in t:
+        return "limit_up"
+    if "跌停" in t:
+        return "limit_down"
+    if not t or t.lower() == "nan":
+        if r >= 9.49:
+            return "limit_up"
+        if r <= -9.49:
+            return "limit_down"
+    if r > 5:
+        return "gt5_up"
+    if r > 2:
+        return "btw_2_5_up"
+    if r > 0:
+        return "btw_0_2_up"
+    if abs(r) < 1e-9:
+        return "flat"
+    if r >= -2:
+        return "btw_0_2_down"
+    if r >= -5:
+        return "btw_2_5_down"
+    return "gt5_down"
+
+
+CHANGE_DIST_ORDER = [
+    "limit_up", "gt5_up", "btw_2_5_up", "btw_0_2_up", "flat",
+    "btw_0_2_down", "btw_2_5_down", "gt5_down", "limit_down",
+]
+CHANGE_DIST_LABELS = [
+    "漲停", ">5%", "2～5%", "0～2%(漲)", "平盤",
+    "0～2%(跌)", "2～5%(跌)", ">5%(跌)", "跌停",
+]
+
+
+def get_change_distribution_latest(price_df: pd.DataFrame) -> dict | None:
+    """
+    以 TEJ 股價資料庫「最新交易日」之普通股（證券代碼為四位數＋名稱）計算漲跌幅區間家數。
+    漲跌停優先讀取「漲跌停」欄位；若無該欄則以 |報酬率％|≥9.49% 近似。
+    """
+    if price_df is None or price_df.empty or "報酬率％" not in price_df.columns:
+        return None
+
+    latest = price_df["date"].max()
+    day = price_df[price_df["date"] == latest]
+    mask = day["證券代碼"].astype(str).str.match(r"^\d{4} ", na=False)
+    day = day.loc[mask]
+    if day.empty:
+        return None
+
+    has_lim_col = "漲跌停" in day.columns
+    buckets = {k: 0 for k in CHANGE_DIST_ORDER}
+
+    for _, row in day.iterrows():
+        raw_r = row["報酬率％"]
+        try:
+            r = float(raw_r)
+        except (TypeError, ValueError):
+            continue
+        if math.isnan(r):
+            continue
+        lim = ""
+        if has_lim_col:
+            v = row["漲跌停"]
+            lim = "" if pd.isna(v) else str(v).strip()
+        cat = _classify_return_bucket(r, lim)
+        if cat:
+            buckets[cat] += 1
+
+    adv = (
+        buckets["limit_up"] + buckets["gt5_up"]
+        + buckets["btw_2_5_up"] + buckets["btw_0_2_up"]
+    )
+    dec = (
+        buckets["limit_down"] + buckets["gt5_down"]
+        + buckets["btw_2_5_down"] + buckets["btw_0_2_down"]
+    )
+    fl = buckets["flat"]
+
+    return {
+        "status": "ok",
+        "date": latest.strftime("%Y-%m-%d"),
+        "labels": CHANGE_DIST_LABELS,
+        "counts": [buckets[k] for k in CHANGE_DIST_ORDER],
+        "advancing": adv,
+        "flat": fl,
+        "declining": dec,
+    }
+
+
 def get_timeseries_data(df: pd.DataFrame, start_date: str = None, end_date: str = None) -> dict:
     """
-    各標的的時序資料，供折線圖、柱狀圖、成交金額趨勢使用。
+    各標的的時序資料，供 `/api/timeseries` 回傳；首頁主要使用漲跌比例、廣度等欄位繪圖，並含成交金額與委買委賣比等可供外部沿用。
     """
     filtered = df.copy()
     if start_date:
@@ -239,6 +505,7 @@ def get_timeseries_data(df: pd.DataFrame, start_date: str = None, end_date: str 
             "漲跌停比": _clean_list((sec["漲停家數"] / limit_down).tolist()),
         }
 
+    result["unified_breadth"] = _compute_unified_breadth_oscillator(filtered)
     return result
 
 
@@ -300,12 +567,127 @@ def get_market_amp_data(start_date: str = None, end_date: str = None) -> dict | 
     }
 
 
+def _breadth_amp_lag_label(k: int) -> str:
+    if k == 0:
+        return "t"
+    if k > 0:
+        return f"t+{k}"
+    return f"t{k}"
+
+
+def get_breadth_sigma_amp_correlation(
+    df: pd.DataFrame,
+    start_date: str = None,
+    end_date: str = None,
+    *,
+    lag_min: int | None = None,
+    lag_max: int | None = None,
+    use_full_sample: bool = False,
+) -> dict:
+    """
+    合併廣度滾動標準差 σ_t（與 unified_breadth 相同定義）與「每日振幅大個股比例」P_t
+    （報告 a 產出之 market amp JSON）的皮爾森相關係數。
+
+    滯後 k（交易日）：計算 corr(σ_t, P_{t+k})。
+    - k = 0：同日
+    - k > 0：振幅比例落後 σ 之 k 日（即 σ 領先）
+    - k < 0：振幅比例領先 σ 之 |k| 日
+
+    use_full_sample=True 時忽略 start_date／end_date，改用大盤統計與振幅 JSON 之全部交集。
+    僅使用兩邊皆有效且日期交集之列；各滯後之有效配對數可能不同。
+    """
+    if not MARKET_AMP_JSON.exists():
+        return {
+            "status": "no_data",
+            "message": "請先產生報告 a 以產生市場振幅資料（市場振幅比例.json）",
+        }
+    try:
+        import json as _json
+        with open(MARKET_AMP_JSON, encoding="utf-8") as f:
+            rows = _json.load(f)
+    except Exception:
+        return {"status": "no_data", "message": "無法讀取市場振幅比例.json"}
+
+    if not rows:
+        return {"status": "no_data", "message": "市場振幅比例.json 為空"}
+
+    cap = int(BREADTH_AMP_CORR_LAG_ABS_CAP)
+    lo = int(BREADTH_AMP_CORR_LAG_DEFAULT_MIN if lag_min is None else lag_min)
+    hi = int(BREADTH_AMP_CORR_LAG_DEFAULT_MAX if lag_max is None else lag_max)
+    lo = max(-cap, min(cap, lo))
+    hi = max(-cap, min(cap, hi))
+    if lo > hi:
+        lo, hi = hi, lo
+
+    filtered = df.copy()
+    if not use_full_sample:
+        if start_date:
+            filtered = filtered[filtered["date"] >= pd.to_datetime(start_date)]
+        if end_date:
+            filtered = filtered[filtered["date"] <= pd.to_datetime(end_date)]
+
+    daily = _unified_breadth_daily(filtered)
+    if daily is None or daily.empty:
+        return {"status": "no_data", "message": "無合併廣度資料"}
+
+    amp_df = pd.DataFrame(rows)
+    amp_df["date"] = pd.to_datetime(amp_df["date"], errors="coerce")
+    amp_df = amp_df.dropna(subset=["date", "amp_big_pct"])
+    if not use_full_sample:
+        if start_date:
+            amp_df = amp_df[amp_df["date"] >= pd.to_datetime(start_date)]
+        if end_date:
+            amp_df = amp_df[amp_df["date"] <= pd.to_datetime(end_date)]
+
+    merged = daily.merge(amp_df[["date", "amp_big_pct"]], on="date", how="inner").sort_values("date")
+    merged = merged.rename(columns={"滾動標準差": "sigma", "amp_big_pct": "amp_pct"})
+    merged["amp_pct"] = merged["amp_pct"].astype(float) * 100.0
+
+    if merged.empty:
+        return {"status": "no_data", "message": "廣度與振幅比例無交集日期"}
+
+    sigma = merged["sigma"]
+    amp = merged["amp_pct"]
+    out_rows = []
+    for k in range(lo, hi + 1):
+        y = amp.shift(-k)
+        pair = pd.DataFrame({"x": sigma, "y": y}).dropna()
+        n = int(len(pair))
+        r = None
+        if n >= 3:
+            c = pair["x"].corr(pair["y"], method="pearson")
+            r = float(c) if c == c else None
+        out_rows.append({"label": _breadth_amp_lag_label(k), "lag": k, "pearson_r": r, "n": n})
+
+    dmin = merged["date"].min()
+    dmax = merged["date"].max()
+    n_win = int(UNIFIED_BREADTH_STD_WINDOW)
+
+    return {
+        "status": "ok",
+        "method": "pearson",
+        "definition": (
+            f"σ_t 為合併廣度 B 之最近 {n_win} 個有效交易日樣本標準差（百分點）；"
+            "P_t 為振幅大個股比例（%）。滯後 k：corr(σ_t, P_{t+k})，k 為交易日。"
+        ),
+        "unified_breadth_window": n_win,
+        "intersection_trading_days": int(len(merged)),
+        "full_sample": bool(use_full_sample),
+        "lag_range": {"min": lo, "max": hi},
+        "date_range": {
+            "start": dmin.strftime("%Y-%m-%d"),
+            "end": dmax.strftime("%Y-%m-%d"),
+        },
+        "lags": out_rows,
+    }
+
+
 # ════════════════════════════════════════════════════════════════════════
 # 國際股市模組
 # ════════════════════════════════════════════════════════════════════════
 
-INTL_INDEX_DIR = Path(r"C:\Users\User\Desktop\財經數據分析平台\All_Data\日資料\國際股價指數")
-FX_DIR         = Path(r"C:\Users\User\Desktop\財經數據分析平台\All_Data\日資料\國內銀行利率(日)_國內銀行匯率")
+INTL_INDEX_DIR = BASE_DIR / "All_Data" / "日資料" / "國際股價指數"
+FX_DIR = BASE_DIR / "All_Data" / "日資料" / "國內銀行利率(日)_國內銀行匯率"
 
 # 銀行匯率欄位（TWD/外幣，即每1單位外幣兌多少台幣）
 FX_COLUMNS: dict[str, tuple[str, str]] = {
@@ -415,6 +797,58 @@ def _intl_group(code: str) -> str:
     if code in _AMERICA: return '美洲'
     if code == 'SB96':   return '美洲'
     return 'MSCI'
+
+
+def _intl_name_compact(s: str) -> str:
+    """比對分組用：臺→台、各種連字號統一、去空白。"""
+    t = (s or "").strip().replace("臺", "台")
+    for dash in (
+        "\u2010", "\u2011", "\u2012", "\u2013", "\u2014", "\u2212",
+        "－", "–", "—", "‧",
+    ):
+        t = t.replace(dash, "-")
+    return t.replace(" ", "").replace("　", "")
+
+
+def _intl_is_taiwan_otc_index(name: str) -> bool:
+    """台灣櫃買／OTC 股價指數（TEJ 名稱可能為臺灣、櫃買指數、連字號變體等）。"""
+    n = (name or "").strip()
+    if "MSCI" in n.upper():
+        return False
+    c = _intl_name_compact(n)
+    cl = c.lower()
+    # 明確含台灣與 OTC
+    if "台灣-otc" in cl or "台灣otc" in cl:
+        return True
+    if "otc股價指數" in cl:
+        return True
+    # 證交所習慣簡稱：櫃買指數、櫃買股價指數、櫃檯買賣…
+    if "櫃買指數" in n.replace("臺", "台") or "櫃買股價指數" in n.replace("臺", "台"):
+        return True
+    if "櫃檯買賣" in n and "指數" in n:
+        return True
+    if "臺灣櫃買" in n or "台灣櫃買" in n.replace("臺", "台"):
+        return True
+    return False
+
+
+def _intl_group_refined(code: str, name: str | None = None) -> str:
+    """
+    國際指數在 UI 上的分組（清單區塊標題）。
+    優先依證券中文名校正少數代碼與地理直覺不符的情形。
+    """
+    n = (name or "").strip()
+    # 台灣 OTC／櫃買指數須優先於 OC72：TEJ 可能將多檔指數標成同一代碼（如 OC72），
+    # 若先判 code==OC72 會把「台灣-OTC股價指數」誤歸美洲（與臺/台、連字號無關）。
+    if _intl_is_taiwan_otc_index(n):
+        return "台灣"
+    # 美國紐約道瓊工業平均數（TEJ 常為 OC72，台幣計價仍歸美洲）
+    if code == "OC72" or "美國紐約道瓊" in n or "道瓊工業平均" in n:
+        return "美洲"
+    # MSCI 美國房地產信託投資基金指數等（勿與區域股指混淆）
+    if "MSCI" in n and ("房地產信託" in n or "REIT" in n.upper()):
+        return "MSCI"
+    return _intl_group(code)
 
 
 def load_fx_data() -> pd.DataFrame:
@@ -530,7 +964,7 @@ def get_intl_indices_meta(intl_df: pd.DataFrame) -> dict:
         name = parts[1] if len(parts) > 1 else code
 
         ccy   = INDEX_CURRENCY_MAP[code]
-        group = _intl_group(code)
+        group = _intl_group_refined(code, name)
 
         indices.append({
             "code":     code,
@@ -660,7 +1094,7 @@ def get_intl_chart_data(
         result[code] = {
             "name":          name,
             "currency":      ccy,
-            "group":         _intl_group(code),
+            "group":         _intl_group_refined(code, name),
             "base_date":     base_date_act.strftime("%Y-%m-%d"),
             "base_value":    round(base_val, 4),
             "can_decompose": can_decompose,
@@ -678,10 +1112,10 @@ def get_intl_chart_data(
 # 個股監控模組
 # ════════════════════════════════════════════════════════════════════════
 
-STOCK_PRICE_DIR = Path(r"C:\Users\User\Desktop\財經數據分析平台\All_Data\日資料\TEJ 股價資料庫")
-CHIP_DIR        = Path(r"C:\Users\User\Desktop\財經數據分析平台\All_Data\日資料\TEJ 籌碼資料庫")
-MONTHLY_DIR     = Path(r"C:\Users\User\Desktop\財經數據分析平台\All_Data\月資料\董監全體持股狀況")
-QUARTERLY_DIR   = Path(r"C:\Users\User\Desktop\財經數據分析平台\All_Data\季資料\以合併為主簡表(單季)-全產業")
+STOCK_PRICE_DIR = BASE_DIR / "All_Data" / "日資料" / "TEJ 股價資料庫"
+CHIP_DIR = BASE_DIR / "All_Data" / "日資料" / "TEJ 籌碼資料庫"
+MONTHLY_DIR = BASE_DIR / "All_Data" / "月資料" / "董監全體持股狀況"
+QUARTERLY_DIR = BASE_DIR / "All_Data" / "季資料" / "以合併為主簡表(單季)-全產業"
 
 STOCK_PRICE_NUMERIC = [
     "開盤價(元)", "最高價(元)", "最低價(元)", "收盤價(元)",
@@ -750,6 +1184,933 @@ def load_stock_price_data() -> pd.DataFrame:
     df.sort_values(["date", "證券代碼"], inplace=True)
     df.reset_index(drop=True, inplace=True)
     return df
+
+
+def _sector_cell_to_stock_code(cell) -> str | None:
+    """自類股清單儲存格解析四位數證券代碼（取字串中最後一組連續四位數）。"""
+    if cell is None or (isinstance(cell, float) and pd.isna(cell)):
+        return None
+    s = str(cell).strip()
+    if not s:
+        return None
+    found = re.findall(r"\d{4}", s)
+    if not found:
+        return None
+    code = found[-1]
+    return code if code.isdigit() else None
+
+
+def load_sector_classification() -> list[dict]:
+    """
+    讀取 Variable_setting/類股清單.csv：第一列為各類股名稱，每欄向下為該類成分。
+    回傳 [{"id": "0", "name": "上市電子", "codes": ["2330", ...]}, ...]
+    """
+    if not SECTOR_LIST_CSV.is_file():
+        return []
+    try:
+        raw = pd.read_csv(SECTOR_LIST_CSV, header=0, dtype=str, encoding="utf-8-sig")
+    except Exception:
+        try:
+            raw = pd.read_csv(SECTOR_LIST_CSV, header=0, dtype=str, encoding="utf-8")
+        except Exception:
+            return []
+    sectors = []
+    for i, col in enumerate(raw.columns):
+        name = str(col).strip() or f"欄位{i}"
+        seen: set[str] = set()
+        codes: list[str] = []
+        for val in raw[col].dropna():
+            c = _sector_cell_to_stock_code(val)
+            if c and c not in seen:
+                seen.add(c)
+                codes.append(c)
+        sectors.append({"id": str(i), "name": name, "codes": codes})
+    return sectors
+
+
+def _latest_day_stock_index(day_df: pd.DataFrame) -> dict[str, dict]:
+    """最新交易日：四位數普通股 short_code -> 報酬、市值、市值比重、完整證券代碼。"""
+    out: dict[str, dict] = {}
+    if day_df.empty or "證券代碼" not in day_df.columns:
+        return out
+    for _, row in day_df.iterrows():
+        full = str(row["證券代碼"]).strip()
+        m = re.match(r"^(\d{4})\s", full)
+        if not m:
+            continue
+        code = m.group(1)
+        if code in out:
+            continue
+        r = row["報酬率％"] if "報酬率％" in day_df.columns else None
+        mcap = row["市值(百萬元)"] if "市值(百萬元)" in day_df.columns else None
+        wt = row["市值比重％"] if "市值比重％" in day_df.columns else None
+        try:
+            rv = float(r) if r is not None and not pd.isna(r) else None
+        except (TypeError, ValueError):
+            rv = None
+        if rv is not None and isinstance(rv, float) and (math.isnan(rv) or math.isinf(rv)):
+            rv = None
+        try:
+            mv = float(mcap) if mcap is not None and not pd.isna(mcap) else None
+        except (TypeError, ValueError):
+            mv = None
+        if mv is not None and isinstance(mv, float) and (math.isnan(mv) or math.isinf(mv)):
+            mv = None
+        try:
+            wv = float(wt) if wt is not None and not pd.isna(wt) else None
+        except (TypeError, ValueError):
+            wv = None
+        if wv is not None and isinstance(wv, float) and (math.isnan(wv) or math.isinf(wv)):
+            wv = None
+        name = full.split(maxsplit=1)[1] if " " in full else code
+        out[code] = {
+            "full": full,
+            "name": name,
+            "ret": rv,
+            "mcap": mv,
+            "weight": wv,
+        }
+    return out
+
+
+def get_sector_performance_bootstrap(price_df: pd.DataFrame) -> dict:
+    """
+    大盤監控：類股橫條圖與折線圖所需之 bootstrap。
+    橫條圖僅納入成分在 TEJ 最新日有效且≥3 檔之類股；平均漲跌幅以市值前 5 檔（>5 檔時）計算。
+    市值占比為該類在清單內且當日有資料之成分，其「市值比重％」加總。
+    """
+    sectors_def = load_sector_classification()
+    if not sectors_def:
+        return {"status": "no_data", "message": "找不到類股清單或無法解析（請確認 Variable_setting/類股清單.csv）"}
+
+    need = ["報酬率％", "市值(百萬元)", "證券代碼", "date"]
+    if price_df is None or price_df.empty or not all(c in price_df.columns for c in need):
+        return {"status": "no_data", "message": "股價資料不足"}
+
+    latest = price_df["date"].max()
+    day = price_df[price_df["date"] == latest]
+    idx = _latest_day_stock_index(day)
+
+    sector_rows = []
+    bar_candidates = []
+
+    for sdef in sectors_def:
+        members = []
+        for c in sdef["codes"]:
+            if c not in idx:
+                continue
+            inf = idx[c]
+            if inf["ret"] is None or inf["mcap"] is None:
+                continue
+            members.append(
+                {
+                    "code": c,
+                    "name": inf["name"],
+                    "full": inf["full"],
+                    "mcap": inf["mcap"],
+                    "weight_pct": _clean(inf["weight"]),
+                    "return_pct": _clean(round(inf["ret"], 4)),
+                }
+            )
+        n = len(members)
+        members.sort(key=lambda x: -x["mcap"])
+        top5 = members[:5] if n > 5 else members
+        default_codes = [x["code"] for x in top5]
+        for m in members:
+            m["in_default_avg"] = m["code"] in default_codes
+
+        sum_w = 0.0
+        for m in members:
+            w = m.get("weight_pct")
+            if w is not None and isinstance(w, (int, float)) and not (math.isnan(w) or math.isinf(w)):
+                sum_w += float(w)
+
+        avg_bar = None
+        if top5:
+            rets_avg = [x["return_pct"] for x in top5 if x.get("return_pct") is not None]
+            avg_bar = (sum(rets_avg) / len(rets_avg)) if rets_avg else None
+
+        row = {
+            "id": sdef["id"],
+            "name": sdef["name"],
+            "member_count": n,
+            "eligible_bar": n >= 3,
+            "weight_pct_sum": _clean(round(sum_w, 4)) if n else None,
+            "avg_change_bar_rule": _clean(round(avg_bar, 4)) if avg_bar is not None else None,
+            "default_codes": default_codes,
+            "members": members,
+        }
+        sector_rows.append(row)
+        if n >= 3 and avg_bar is not None:
+            bar_candidates.append(
+                {
+                    "id": sdef["id"],
+                    "name": sdef["name"],
+                    "weight_pct_sum": row["weight_pct_sum"],
+                    "avg_change_pct": row["avg_change_bar_rule"],
+                    "member_count": n,
+                    "n_used_for_avg": len(top5),
+                }
+            )
+
+    bar_candidates.sort(
+        key=lambda x: (
+            float(x["avg_change_pct"]) if x["avg_change_pct"] is not None else float("-inf"),
+        ),
+        reverse=True,
+    )
+    top8 = bar_candidates[:8]
+
+    stock_universe = get_stock_list(price_df)
+
+    return {
+        "status": "ok",
+        "as_of": latest.strftime("%Y-%m-%d"),
+        "bars": top8,
+        "sectors": sector_rows,
+        "stock_universe": stock_universe,
+    }
+
+
+def get_sector_performance_lines(
+    price_df: pd.DataFrame,
+    start_date: str | None,
+    end_date: str | None,
+    sector_series: list,
+    stock_codes: list,
+) -> dict:
+    """
+    依使用者勾選之類股（自選成分代碼計算當日平均報酬率％）與個股代碼，回傳區間內每日序列；
+    輸出值為自區間起始之**複利累積報酬率％**（由日報酬率換算）。
+    sector_series: [{"id": "3", "name": "半導體", "codes": ["2330", "2454"]}, ...]
+    """
+    if price_df is None or price_df.empty or "報酬率％" not in price_df.columns:
+        return {"status": "no_data", "message": "無股價資料", "series": []}
+
+    code_map = {}
+    for full in price_df["證券代碼"].unique():
+        sc = str(full).strip().split()[0]
+        if len(sc) == 4 and sc.isdigit():
+            code_map[sc] = str(full).strip()
+
+    pf = price_df.copy()
+    if start_date:
+        pf = pf[pf["date"] >= pd.to_datetime(start_date)]
+    if end_date:
+        pf = pf[pf["date"] <= pd.to_datetime(end_date)]
+
+    # 僅保留需要的 full 代碼列
+    want_full = set()
+    for block in sector_series or []:
+        if not isinstance(block, dict):
+            continue
+        for c in block.get("codes") or []:
+            c = str(c).strip()
+            if c in code_map:
+                want_full.add(code_map[c])
+    for c in stock_codes or []:
+        c = str(c).strip()
+        if c in code_map:
+            want_full.add(code_map[c])
+    if not want_full:
+        return {"status": "ok", "series": [], "dates": []}
+
+    sub = pf[pf["證券代碼"].isin(want_full)][["date", "證券代碼", "報酬率％"]].copy()
+    sub["short"] = sub["證券代碼"].astype(str).str.strip().str.split().str[0]
+
+    dates = sorted(sub["date"].dropna().unique())
+    date_strs = [pd.Timestamp(d).strftime("%Y-%m-%d") for d in dates]
+
+    # short -> {date -> ret}
+    by_sd: dict[tuple, float] = {}
+    for _, r in sub.iterrows():
+        d = r["date"]
+        if pd.isna(d):
+            continue
+        try:
+            v = float(r["報酬率％"])
+        except (TypeError, ValueError):
+            continue
+        if math.isnan(v) or math.isinf(v):
+            continue
+        by_sd[(r["short"], pd.Timestamp(d).normalize())] = v
+
+    def series_for_shorts(shorts: list[str]) -> list:
+        out = []
+        for d in dates:
+            dn = pd.Timestamp(d).normalize()
+            vals = []
+            for sc in shorts:
+                if sc in code_map:
+                    k = (sc, dn)
+                    if k in by_sd:
+                        vals.append(by_sd[k])
+            if vals:
+                out.append(sum(vals) / len(vals))
+            else:
+                out.append(None)
+        return out
+
+    series_out = []
+    palette_i = 0
+    colors = ["#58a6ff", "#d29922", "#f85149", "#3fb950", "#bc8cff", "#39d0d8", "#e3b341", "#8b949e"]
+
+    for block in sector_series or []:
+        if not isinstance(block, dict):
+            continue
+        codes = [str(c).strip() for c in (block.get("codes") or []) if str(c).strip() in code_map]
+        if not codes:
+            continue
+        sid = str(block.get("id", ""))
+        sname = str(block.get("name") or sid)
+        label = f"{sname}（{len(codes)}檔均）"
+        vals = series_for_shorts(codes)
+        color = colors[palette_i % len(colors)]
+        palette_i += 1
+        cum_vals = _daily_returns_to_cumulative_pct([_clean(v) for v in vals])
+        series_out.append(
+            {
+                "kind": "sector_avg",
+                "id": sid,
+                "label": label,
+                "dates": date_strs,
+                "values": cum_vals,
+                "line": {"color": color, "width": 2},
+            }
+        )
+
+    for c in stock_codes or []:
+        c = str(c).strip()
+        if c not in code_map:
+            continue
+        vals = series_for_shorts([c])
+        name = code_map[c].split(maxsplit=1)[1] if " " in code_map[c] else c
+        color = colors[palette_i % len(colors)]
+        palette_i += 1
+        cum_vals = _daily_returns_to_cumulative_pct([_clean(v) for v in vals])
+        series_out.append(
+            {
+                "kind": "stock",
+                "code": c,
+                "label": f"{c} {name}",
+                "dates": date_strs,
+                "values": cum_vals,
+                "line": {"color": color, "width": 1.8, "dash": "dot"},
+            }
+        )
+
+    return {
+        "status": "ok",
+        "dates": date_strs,
+        "series": series_out,
+        "metric": "cumulative_return_pct",
+    }
+
+
+def _institutional_summary_from_group(g: pd.DataFrame) -> dict | None:
+    if g is None or g.empty:
+        return None
+    g2 = g.sort_values("date").copy()
+    for col in ("foreign_e", "trust_e", "dealer_e"):
+        g2[col] = pd.to_numeric(g2[col], errors="coerce").fillna(0.0)
+    last = g2.iloc[-1]
+    ld = pd.Timestamp(last["date"])
+    d1 = {
+        "as_of": ld.strftime("%Y-%m-%d"),
+        "as_of_md": ld.strftime("%m/%d"),
+        "foreign": _clean(float(last["foreign_e"])),
+        "trust": _clean(float(last["trust_e"])),
+        "dealer": _clean(float(last["dealer_e"])),
+        "total": _clean(
+            float(last["foreign_e"] + last["trust_e"] + last["dealer_e"]),
+        ),
+    }
+    t5 = g2.tail(5)
+    d5 = {
+        "foreign": _clean(float(t5["foreign_e"].sum())),
+        "trust": _clean(float(t5["trust_e"].sum())),
+        "dealer": _clean(float(t5["dealer_e"].sum())),
+        "total": _clean(
+            float(
+                t5["foreign_e"].sum()
+                + t5["trust_e"].sum()
+                + t5["dealer_e"].sum(),
+            ),
+        ),
+    }
+    return {"last_day": d1, "last_5d": d5}
+
+
+def _pack_institutional_market_slice(sub: pd.DataFrame) -> dict:
+    if sub is None or sub.empty:
+        return {
+            "dates": [],
+            "foreign_bn": [],
+            "trust_bn": [],
+            "dealer_bn": [],
+            "total_bn": [],
+            "summary": None,
+        }
+    g = (
+        sub.groupby("date", as_index=False)[["foreign_e", "trust_e", "dealer_e"]]
+        .sum()
+        .sort_values("date")
+    )
+    dates = g["date"].dt.strftime("%Y-%m-%d").tolist()
+    fe = _clean_list(g["foreign_e"].tolist())
+    te = _clean_list(g["trust_e"].tolist())
+    de = _clean_list(g["dealer_e"].tolist())
+    g_num = g.copy()
+    for col in ("foreign_e", "trust_e", "dealer_e"):
+        g_num[col] = pd.to_numeric(g_num[col], errors="coerce").fillna(0.0)
+    totals = _clean_list(
+        (g_num["foreign_e"] + g_num["trust_e"] + g_num["dealer_e"]).tolist(),
+    )
+    return {
+        "dates": dates,
+        "foreign_bn": fe,
+        "trust_bn": te,
+        "dealer_bn": de,
+        "total_bn": totals,
+        "summary": _institutional_summary_from_group(g),
+    }
+
+
+def get_sector_institutional_lines(
+    price_df: pd.DataFrame,
+    chip_df: pd.DataFrame,
+    start_date: str | None,
+    end_date: str | None,
+    sector_series: list,
+    stock_codes: list,
+) -> dict:
+    """
+    與累積報酬折線相同勾選：類股為成分股當日買賣超金額（億元）之**簡單平均**，個股為單一標的。
+    金額＝收盤價×買賣超(張)×1000。
+    """
+    note = (
+        "金額為當日收盤價×買賣超張數×1000 之估算值（億元）；"
+        "類股折線為成分當日簡單平均，個股為單一標的。"
+    )
+    empty_ok: dict = {
+        "status": "ok",
+        "dates": [],
+        "lines": [],
+        "unit": "億元",
+        "note": note,
+    }
+
+    need_chip = [
+        "證券代碼",
+        "年月日",
+        "外資買賣超(張)",
+        "投信買賣超(張)",
+        "自營買賣超(張)",
+    ]
+    need_price = ["證券代碼", "date", "收盤價(元)"]
+
+    if price_df is None or price_df.empty:
+        return {**empty_ok, "status": "no_data", "message": "無股價資料"}
+    if chip_df is None or chip_df.empty:
+        return {**empty_ok, "status": "no_data", "message": "無籌碼資料"}
+    if not all(c in chip_df.columns for c in need_chip):
+        return {**empty_ok, "status": "no_data", "message": "籌碼資料缺少法人買賣超欄位"}
+    if not all(c in price_df.columns for c in need_price):
+        return {**empty_ok, "status": "no_data", "message": "股價資料缺少收盤價"}
+
+    code_map: dict[str, str] = {}
+    for full in price_df["證券代碼"].unique():
+        sc = str(full).strip().split()[0]
+        if len(sc) == 4 and sc.isdigit():
+            code_map[sc] = str(full).strip()
+
+    want_full: set[str] = set()
+    for block in sector_series or []:
+        if not isinstance(block, dict):
+            continue
+        for c in block.get("codes") or []:
+            c = str(c).strip()
+            if c in code_map:
+                want_full.add(code_map[c])
+    for c in stock_codes or []:
+        c = str(c).strip()
+        if c in code_map:
+            want_full.add(code_map[c])
+    if not want_full:
+        return empty_ok
+
+    want_shorts = {str(f).strip().split()[0] for f in want_full}
+
+    p = price_df[["date", "證券代碼", "收盤價(元)"]].copy()
+    p["short"] = p["證券代碼"].astype(str).str.strip().str.split().str[0]
+    p = p.loc[p["short"].str.match(r"^\d{4}$", na=False)]
+
+    c = chip_df[
+        ["年月日", "證券代碼", "外資買賣超(張)", "投信買賣超(張)", "自營買賣超(張)"]
+    ].copy()
+    c["date"] = pd.to_datetime(c["年月日"], format="%Y%m%d", errors="coerce")
+    c["short"] = c["證券代碼"].astype(str).str.strip().str.split().str[0]
+    c = c.loc[c["short"].str.match(r"^\d{4}$", na=False)]
+
+    if start_date:
+        t0 = pd.to_datetime(start_date)
+        p = p[p["date"] >= t0]
+        c = c[c["date"] >= t0]
+    if end_date:
+        t1 = pd.to_datetime(end_date)
+        p = p[p["date"] <= t1]
+        c = c[c["date"] <= t1]
+
+    merged = pd.merge(c, p, on=["date", "short"], how="inner")
+    merged = merged.loc[merged["short"].isin(want_shorts)]
+    if merged.empty:
+        return {**empty_ok, "message": "區間內無可對齊之籌碼與股價列"}
+
+    px = pd.to_numeric(merged["收盤價(元)"], errors="coerce")
+    ff = pd.to_numeric(merged["外資買賣超(張)"], errors="coerce")
+    tf = pd.to_numeric(merged["投信買賣超(張)"], errors="coerce")
+    dlr = pd.to_numeric(merged["自營買賣超(張)"], errors="coerce")
+    merged = merged.assign(
+        foreign_e=ff.fillna(0) * 1000.0 * px.fillna(0) / 1e8,
+        trust_e=tf.fillna(0) * 1000.0 * px.fillna(0) / 1e8,
+        dealer_e=dlr.fillna(0) * 1000.0 * px.fillna(0) / 1e8,
+    )
+
+    daily_stock = (
+        merged.groupby(["date", "short"], as_index=False)[
+            ["foreign_e", "trust_e", "dealer_e"]
+        ]
+        .mean()
+        .sort_values(["date", "short"])
+    )
+
+    dates = sorted(daily_stock["date"].dropna().unique())
+    date_strs = [pd.Timestamp(d).strftime("%Y-%m-%d") for d in dates]
+
+    def triple_series_for_shorts(shorts: list[str]) -> tuple[list, list, list]:
+        out_f: list = []
+        out_t: list = []
+        out_d: list = []
+        for d in dates:
+            rows = daily_stock[
+                (daily_stock["date"] == d)
+                & (daily_stock["short"].isin(shorts))
+            ]
+            if rows.empty:
+                out_f.append(None)
+                out_t.append(None)
+                out_d.append(None)
+            else:
+                out_f.append(_clean(float(rows["foreign_e"].mean())))
+                out_t.append(_clean(float(rows["trust_e"].mean())))
+                out_d.append(_clean(float(rows["dealer_e"].mean())))
+        return out_f, out_t, out_d
+
+    lines_out: list = []
+    palette_i = 0
+    colors = [
+        "#58a6ff",
+        "#d29922",
+        "#f85149",
+        "#3fb950",
+        "#bc8cff",
+        "#39d0d8",
+        "#e3b341",
+        "#8b949e",
+    ]
+
+    for block in sector_series or []:
+        if not isinstance(block, dict):
+            continue
+        codes = [
+            str(x).strip()
+            for x in (block.get("codes") or [])
+            if str(x).strip() in code_map
+        ]
+        if not codes:
+            continue
+        sid = str(block.get("id", ""))
+        sname = str(block.get("name") or sid)
+        label = f"{sname}（{len(codes)}檔均）"
+        fe, te, de = triple_series_for_shorts(codes)
+        color = colors[palette_i % len(colors)]
+        palette_i += 1
+        lines_out.append(
+            {
+                "kind": "sector_avg",
+                "id": sid,
+                "label": label,
+                "foreign_bn": fe,
+                "trust_bn": te,
+                "dealer_bn": de,
+                "line": {"color": color, "width": 2},
+            }
+        )
+
+    for c in stock_codes or []:
+        c = str(c).strip()
+        if c not in code_map:
+            continue
+        fe, te, de = triple_series_for_shorts([c])
+        name = code_map[c].split(maxsplit=1)[1] if " " in code_map[c] else c
+        color = colors[palette_i % len(colors)]
+        palette_i += 1
+        lines_out.append(
+            {
+                "kind": "stock",
+                "code": c,
+                "label": f"{c} {name}",
+                "foreign_bn": fe,
+                "trust_bn": te,
+                "dealer_bn": de,
+                "line": {"color": color, "width": 1.8, "dash": "dot"},
+            }
+        )
+
+    return {
+        "status": "ok",
+        "dates": date_strs,
+        "lines": lines_out,
+        "unit": "億元",
+        "note": note,
+    }
+
+
+def get_market_institutional_flow(
+    price_df: pd.DataFrame,
+    chip_df: pd.DataFrame,
+    start_date: str | None,
+    end_date: str | None,
+) -> dict:
+    """
+    三大法人每日買賣超金額（億元）：以當日收盤價×買賣超(張)×1000 估算後，於全市場加總。
+    若有 Variable_setting/股票市場別.csv，另回傳上市(TSE)／上櫃(OTC)分拆。
+    """
+    need_chip = [
+        "證券代碼",
+        "年月日",
+        "外資買賣超(張)",
+        "投信買賣超(張)",
+        "自營買賣超(張)",
+    ]
+    need_price = ["證券代碼", "date", "收盤價(元)"]
+    if chip_df is None or chip_df.empty:
+        return {
+            "status": "no_data",
+            "message": "無籌碼資料",
+            "split_available": False,
+            "markets": {},
+        }
+    if price_df is None or price_df.empty:
+        return {
+            "status": "no_data",
+            "message": "無股價資料",
+            "split_available": False,
+            "markets": {},
+        }
+    if not all(c in chip_df.columns for c in need_chip):
+        return {
+            "status": "no_data",
+            "message": "籌碼資料缺少法人買賣超欄位",
+            "split_available": False,
+            "markets": {},
+        }
+    if not all(c in price_df.columns for c in need_price):
+        return {
+            "status": "no_data",
+            "message": "股價資料缺少收盤價",
+            "split_available": False,
+            "markets": {},
+        }
+
+    p = price_df[["date", "證券代碼", "收盤價(元)"]].copy()
+    p["short"] = p["證券代碼"].astype(str).str.strip().str.split().str[0]
+    p = p.loc[p["short"].str.match(r"^\d{4}$", na=False)]
+
+    c = chip_df[
+        ["年月日", "證券代碼", "外資買賣超(張)", "投信買賣超(張)", "自營買賣超(張)"]
+    ].copy()
+    c["date"] = pd.to_datetime(c["年月日"], format="%Y%m%d", errors="coerce")
+    c["short"] = c["證券代碼"].astype(str).str.strip().str.split().str[0]
+    c = c.loc[c["short"].str.match(r"^\d{4}$", na=False)]
+
+    if start_date:
+        t0 = pd.to_datetime(start_date)
+        p = p[p["date"] >= t0]
+        c = c[c["date"] >= t0]
+    if end_date:
+        t1 = pd.to_datetime(end_date)
+        p = p[p["date"] <= t1]
+        c = c[c["date"] <= t1]
+
+    merged = pd.merge(c, p, on=["date", "short"], how="inner")
+    if merged.empty:
+        return {
+            "status": "no_data",
+            "message": "區間內無可對齊之股價與籌碼列",
+            "split_available": False,
+            "markets": {},
+        }
+
+    px = pd.to_numeric(merged["收盤價(元)"], errors="coerce")
+    ff = pd.to_numeric(merged["外資買賣超(張)"], errors="coerce")
+    tf = pd.to_numeric(merged["投信買賣超(張)"], errors="coerce")
+    df = pd.to_numeric(merged["自營買賣超(張)"], errors="coerce")
+    merged = merged.assign(
+        foreign_e=ff.fillna(0) * 1000.0 * px.fillna(0) / 1e8,
+        trust_e=tf.fillna(0) * 1000.0 * px.fillna(0) / 1e8,
+        dealer_e=df.fillna(0) * 1000.0 * px.fillna(0) / 1e8,
+    )
+
+    mm = _load_stock_market_map()
+    split_available = bool(mm)
+    markets: dict = {"all": _pack_institutional_market_slice(merged)}
+    if split_available:
+        merged = merged.assign(mkt=merged["short"].map(mm))
+        markets["tse"] = _pack_institutional_market_slice(
+            merged.loc[merged["mkt"] == "TSE"],
+        )
+        markets["otc"] = _pack_institutional_market_slice(
+            merged.loc[merged["mkt"] == "OTC"],
+        )
+
+    return {
+        "status": "ok",
+        "unit": "億元",
+        "note": "金額為當日收盤價×買賣超張數×1000 之估算值",
+        "split_available": split_available,
+        "markets": markets,
+    }
+
+
+def _metric_float(v) -> float | None:
+    if v is None or (isinstance(v, float) and pd.isna(v)):
+        return None
+    try:
+        x = float(v)
+        if math.isnan(x) or math.isinf(x):
+            return None
+        return x
+    except (TypeError, ValueError):
+        return None
+
+
+def get_sector_valuation_monthly(
+    price_df: pd.DataFrame,
+    start_date: str | None,
+    end_date: str | None,
+    sector_series: list,
+    stock_codes: list,
+) -> dict:
+    """
+    依與報酬折線相同之勾選，回傳**月頻**簡單平均：各股取該月最後交易日之本益比-TSE、股價淨值比-TSE（由同日列讀取），
+    再對類股內有效值平均（本益比／淨值比僅納入 >0）。附 PE／PB 估值帶（第一條有足夠資料之序列之 10/30/50/70/90 分位）
+    與摘要表（最近月、月增、年增）。回傳之 `series` 僅含 `pe`／`pb`，不含收盤價序列。
+    """
+    required = ["date", "證券代碼", "本益比-TSE", "股價淨值比-TSE"]
+    if price_df is None or price_df.empty:
+        return {
+            "status": "no_data",
+            "message": "無股價資料",
+            "months": [],
+            "series": [],
+            "pe_bands": None,
+            "pb_bands": None,
+            "pe_summary": [],
+            "pb_summary": [],
+        }
+    if not all(c in price_df.columns for c in required):
+        return {
+            "status": "no_data",
+            "message": "股價資料缺少本益比-TSE 或 股價淨值比-TSE",
+            "months": [],
+            "series": [],
+            "pe_bands": None,
+            "pb_bands": None,
+            "pe_summary": [],
+            "pb_summary": [],
+        }
+
+    code_map: dict[str, str] = {}
+    for full in price_df["證券代碼"].unique():
+        sc = str(full).strip().split()[0]
+        if len(sc) == 4 and sc.isdigit():
+            code_map[sc] = str(full).strip()
+
+    pf = price_df.copy()
+    if start_date:
+        pf = pf[pf["date"] >= pd.to_datetime(start_date)]
+    if end_date:
+        pf = pf[pf["date"] <= pd.to_datetime(end_date)]
+
+    want_full: set[str] = set()
+    for block in sector_series or []:
+        if not isinstance(block, dict):
+            continue
+        for c in block.get("codes") or []:
+            c = str(c).strip()
+            if c in code_map:
+                want_full.add(code_map[c])
+    for c in stock_codes or []:
+        c = str(c).strip()
+        if c in code_map:
+            want_full.add(code_map[c])
+    if not want_full:
+        return {
+            "status": "ok",
+            "months": [],
+            "series": [],
+            "pe_bands": None,
+            "pb_bands": None,
+            "pe_summary": [],
+            "pb_summary": [],
+        }
+
+    sub = pf[pf["證券代碼"].isin(want_full)][required].copy()
+    sub["short"] = sub["證券代碼"].astype(str).str.strip().str.split().str[0]
+    sub["ym"] = sub["date"].dt.to_period("M")
+
+    all_months = sorted(sub["ym"].dropna().unique())
+    month_keys: list[pd.Timestamp] = []
+    for ym in all_months:
+        chunk = sub.loc[sub["ym"] == ym, "date"]
+        if chunk.empty:
+            continue
+        month_keys.append(pd.Timestamp(chunk.max()))
+    month_strs = [d.strftime("%Y-%m-%d") for d in month_keys]
+
+    def monthly_avg_for_shorts(shorts: list[str], ym) -> dict:
+        pes: list[float] = []
+        pbs: list[float] = []
+        for sc in shorts:
+            if sc not in code_map:
+                continue
+            sm = sub[(sub["short"] == sc) & (sub["ym"] == ym)]
+            if sm.empty:
+                continue
+            row = sm.sort_values("date").iloc[-1]
+            pe = _metric_float(row["本益比-TSE"])
+            pb = _metric_float(row["股價淨值比-TSE"])
+            if pe is not None and pe > 0:
+                pes.append(pe)
+            if pb is not None and pb > 0:
+                pbs.append(pb)
+        return {
+            "pe": sum(pes) / len(pes) if pes else None,
+            "pb": sum(pbs) / len(pbs) if pbs else None,
+        }
+
+    series_out: list[dict] = []
+    palette_i = 0
+    colors = ["#58a6ff", "#d29922", "#f85149", "#3fb950", "#bc8cff", "#39d0d8", "#e3b341", "#8b949e"]
+
+    for block in sector_series or []:
+        if not isinstance(block, dict):
+            continue
+        codes = [str(c).strip() for c in (block.get("codes") or []) if str(c).strip() in code_map]
+        if not codes:
+            continue
+        sid = str(block.get("id", ""))
+        sname = str(block.get("name") or sid)
+        label = f"{sname}（{len(codes)}檔均）"
+        pes, pbs = [], []
+        for ym in all_months:
+            r = monthly_avg_for_shorts(codes, ym)
+            pes.append(_clean(round(r["pe"], 4)) if r["pe"] is not None else None)
+            pbs.append(_clean(round(r["pb"], 4)) if r["pb"] is not None else None)
+        col = colors[palette_i % len(colors)]
+        palette_i += 1
+        series_out.append(
+            {
+                "kind": "sector_avg",
+                "id": sid,
+                "label": label,
+                "pe": pes,
+                "pb": pbs,
+                "line": {"color": col, "width": 2},
+            }
+        )
+
+    for c in stock_codes or []:
+        c = str(c).strip()
+        if c not in code_map:
+            continue
+        pes, pbs = [], []
+        for ym in all_months:
+            r = monthly_avg_for_shorts([c], ym)
+            pes.append(_clean(round(r["pe"], 4)) if r["pe"] is not None else None)
+            pbs.append(_clean(round(r["pb"], 4)) if r["pb"] is not None else None)
+        name = code_map[c].split(maxsplit=1)[1] if " " in code_map[c] else c
+        col = colors[palette_i % len(colors)]
+        palette_i += 1
+        series_out.append(
+            {
+                "kind": "stock",
+                "code": c,
+                "label": f"{c} {name}",
+                "pe": pes,
+                "pb": pbs,
+                "line": {"color": col, "width": 1.8, "dash": "dot"},
+            }
+        )
+
+    pe_bands = None
+    pb_bands = None
+    for s in series_out:
+        raw = [x for x in s["pe"] if x is not None and isinstance(x, (int, float)) and x > 0]
+        if pe_bands is None and len(raw) >= 8:
+            ser = pd.Series(raw, dtype="float64")
+            edges = ser.quantile([0.1, 0.3, 0.5, 0.7, 0.9]).tolist()
+            pe_bands = {"edges": [_clean(round(float(e), 4)) for e in edges]}
+        rawb = [x for x in s["pb"] if x is not None and isinstance(x, (int, float)) and x > 0]
+        if pb_bands is None and len(rawb) >= 8:
+            serb = pd.Series(rawb, dtype="float64")
+            edgesb = serb.quantile([0.1, 0.3, 0.5, 0.7, 0.9]).tolist()
+            pb_bands = {"edges": [_clean(round(float(e), 4)) for e in edgesb]}
+        if pe_bands is not None and pb_bands is not None:
+            break
+
+    def build_summary(metric: str) -> list:
+        out: list[dict] = []
+        for s in series_out:
+            vals = s[metric]
+            idx = None
+            for i in range(len(vals) - 1, -1, -1):
+                if vals[i] is not None:
+                    idx = i
+                    break
+            if idx is None:
+                continue
+            cur = float(vals[idx])
+            prev_v = float(vals[idx - 1]) if idx > 0 and vals[idx - 1] is not None else None
+            d0 = month_keys[idx]
+            yoy_idx = None
+            for j, d in enumerate(month_keys):
+                if d.year == d0.year - 1 and d.month == d0.month:
+                    yoy_idx = j
+            yoy_v = float(vals[yoy_idx]) if yoy_idx is not None and vals[yoy_idx] is not None else None
+            mom = (cur - prev_v) if prev_v is not None else None
+            yoy_d = (cur - yoy_v) if yoy_v is not None else None
+            out.append(
+                {
+                    "label": s["label"],
+                    "month": month_strs[idx],
+                    "value": _clean(round(cur, 4)),
+                    "mom": _clean(round(mom, 4)) if mom is not None else None,
+                    "yoy": _clean(round(yoy_d, 4)) if yoy_d is not None else None,
+                }
+            )
+        return out
+
+    return {
+        "status": "ok",
+        "months": month_strs,
+        "series": series_out,
+        "pe_bands": pe_bands,
+        "pb_bands": pb_bands,
+        "pe_summary": build_summary("pe"),
+        "pb_summary": build_summary("pb"),
+    }
 
 
 def load_chip_data() -> pd.DataFrame:
@@ -864,11 +2225,20 @@ def get_stock_series(
 
     # 股票持續性機率 P(高持續性|振幅大事件)，由報告 a 產生時寫出
     persist_prob_map = {}
+    persist_hi_n_map = {}
+    persist_amp_n_map = {}
     if STOCK_PERSIST_PROB_CSV.exists():
         try:
             prob_df = pd.read_csv(STOCK_PERSIST_PROB_CSV, encoding="utf-8-sig")
             if "stock_code" in prob_df.columns and "stock_persist_prob" in prob_df.columns:
-                persist_prob_map = prob_df.set_index("stock_code")["stock_persist_prob"].to_dict()
+                prob_df = prob_df.copy()
+                prob_df["stock_code"] = prob_df["stock_code"].astype(str).str.strip()
+                ix = prob_df.set_index("stock_code")
+                persist_prob_map = ix["stock_persist_prob"].to_dict()
+                if "stock_persist_hi_n" in ix.columns:
+                    persist_hi_n_map = ix["stock_persist_hi_n"].to_dict()
+                if "stock_persist_amp_n" in ix.columns:
+                    persist_amp_n_map = ix["stock_persist_amp_n"].to_dict()
         except Exception:
             pass
 
@@ -929,6 +2299,8 @@ def get_stock_series(
             "limit_up":     (_col(ps, "漲跌停").astype(str).str.strip() == "+").astype(int).tolist(),
             "limit_down":   (_col(ps, "漲跌停").astype(str).str.strip() == "-").astype(int).tolist(),
             "stock_persist_prob": _clean(persist_prob_map.get(code)),
+            "stock_persist_hi_n": _to_int(persist_hi_n_map.get(code)),
+            "stock_persist_amp_n": _to_int(persist_amp_n_map.get(code)),
         }
 
         # 籌碼資料
@@ -1031,365 +2403,3 @@ def get_heatmap_data(df: pd.DataFrame) -> dict:
         "values": values,
     }
 
-
-# ════════════════════════════════════════════════════════════════════════
-# 特徵溢酬監控（月再平衡、雙重排序 tercile long–short）
-# ════════════════════════════════════════════════════════════════════════
-
-
-def load_risk_free_series() -> pd.Series | None:
-    """
-    與 generate_factor_returns_csv.load_risk_free 相同定義：
-    各家銀行「一年定存」之日平均（％），索引為 date。
-    """
-    csv_files = sorted(BANK_RATE_DIR.glob("*.csv"))
-    if not csv_files:
-        return None
-    dfs = []
-    for f in csv_files:
-        try:
-            raw = pd.read_csv(f, encoding="utf-16", sep="\t", dtype=str)
-            if "一年定存" not in raw.columns or "年月日" not in raw.columns:
-                continue
-            raw = raw[["證券代碼", "年月日", "一年定存"]].copy()
-            raw["一年定存"] = pd.to_numeric(raw["一年定存"].astype(str).str.strip(), errors="coerce")
-            raw = raw[raw["一年定存"].notna() & (raw["一年定存"] > 0)]
-            if len(raw) > 0:
-                dfs.append(raw)
-        except Exception:
-            continue
-    if not dfs:
-        return None
-    all_df = pd.concat(dfs, ignore_index=True)
-    all_df["年月日"] = all_df["年月日"].astype(str).str.strip()
-    rf = all_df.groupby("年月日")["一年定存"].mean()
-    rf.index = pd.to_datetime(rf.index, format="%Y%m%d", errors="coerce")
-    rf = rf[rf.index.notna()]
-    return rf.sort_index()
-
-
-def _rf_for_date(rf_series: pd.Series | None, di: pd.Timestamp) -> float:
-    """無風險利率轉成與因子腳本相同之日用小數（一年定存％ ÷ 100）。"""
-    if rf_series is None or len(rf_series) == 0:
-        return 0.0
-    try:
-        if di in rf_series.index:
-            v = float(rf_series.loc[di])
-        else:
-            v = float(rf_series.asof(di))
-    except (KeyError, TypeError, ValueError):
-        return 0.0
-    if math.isnan(v):
-        return 0.0
-    return v / 100.0
-
-
-_factor_chars_memo: pd.DataFrame | None = None
-
-
-def invalidate_factor_chars_cache() -> None:
-    global _factor_chars_memo
-    _factor_chars_memo = None
-
-
-def load_factor_chars_table() -> pd.DataFrame:
-    """讀取因子特徵與載荷 CSV（僅保留排序用特徵欄）。啟動後快取於記憶體，更新檔案後請呼叫重新載入。"""
-    global _factor_chars_memo
-    if _factor_chars_memo is not None:
-        return _factor_chars_memo.copy(deep=False)
-    if not FACTOR_CHARS_CSV.exists():
-        raise FileNotFoundError(f"找不到：{FACTOR_CHARS_CSV}（請先產生因子特徵 CSV）")
-    df = pd.read_csv(FACTOR_CHARS_CSV, encoding="utf-8-sig", low_memory=False)
-    df["證券代碼"] = df["證券代碼"].astype(str).str.strip()
-    df["年月日"] = df["年月日"].astype(str).str.strip()
-    df["date"] = pd.to_datetime(df["年月日"], format="%Y%m%d", errors="coerce")
-    df = df.dropna(subset=["date"])
-    keep = ["證券代碼", "年月日", "date"] + [c for c in FEATURE_SORT_COLS if c in df.columns]
-    for c in FEATURE_SORT_COLS:
-        if c in df.columns:
-            df[c] = pd.to_numeric(df[c], errors="coerce")
-    out = df[keep].drop_duplicates(subset=["證券代碼", "date"], keep="last")
-    _factor_chars_memo = out
-    return out.copy(deep=False)
-
-
-def _last_trading_day_per_month(trading_days: list) -> list:
-    by_ym = {}
-    for d in trading_days:
-        if pd.isna(d):
-            continue
-        ts = pd.Timestamp(d)
-        by_ym[(ts.year, ts.month)] = ts
-    return sorted(by_ym.values())
-
-
-def _tercile_long_short_codes(sub: pd.DataFrame, dim2: str) -> tuple[frozenset, frozenset] | None:
-    """
-    sub：同一第一維子樣本，需含 code, dim2。
-    回傳 (高組代碼, 低組代碼)，失敗則 None。
-    """
-    s = sub[[dim2, "code"]].dropna(subset=[dim2])
-    if len(s) < FEATURE_MIN_TERCILE * 3:
-        return None
-    try:
-        ranks = s[dim2].rank(method="first")
-        labels = pd.qcut(ranks, q=3, labels=[0, 1, 2], duplicates="drop")
-    except (ValueError, TypeError):
-        return None
-    s = s.copy()
-    s["_g"] = labels
-    if s["_g"].nunique() < 3:
-        return None
-    vc = s.groupby("_g", observed=False).size()
-    if len(vc) < 3 or vc.min() < FEATURE_MIN_TERCILE:
-        return None
-    hi = frozenset(s.loc[s["_g"] == 2, "code"].astype(str))
-    lo = frozenset(s.loc[s["_g"] == 0, "code"].astype(str))
-    if len(hi) < FEATURE_MIN_TERCILE or len(lo) < FEATURE_MIN_TERCILE:
-        return None
-    return hi, lo
-
-
-def _formation_portfolios(
-    day_panel: pd.DataFrame, dim1: str, dim2: str
-) -> tuple[frozenset, frozenset, frozenset, frozenset] | None:
-    """
-    於 formation 日之截面，回傳 (long_A, short_A, long_B, short_B)。
-    A = 第一維高組（>= 中位數），B = 低組。
-    """
-    need = {"code", dim1, dim2, "市值(百萬元)"}
-    if not need.issubset(day_panel.columns):
-        return None
-    w = day_panel.dropna(subset=[dim1, dim2]).copy()
-    w = w[w["市值(百萬元)"].fillna(0) >= FEATURE_MIN_MV]
-    if len(w) < FEATURE_MIN_TERCILE * 6:
-        return None
-    med = w[dim1].median()
-    if pd.isna(med):
-        return None
-    high = w[w[dim1] >= med]
-    low = w[w[dim1] < med]
-    ls_h = _tercile_long_short_codes(high, dim2)
-    ls_l = _tercile_long_short_codes(low, dim2)
-    if ls_h is None or ls_l is None:
-        return None
-    long_a, short_a = ls_h
-    long_b, short_b = ls_l
-    return long_a, short_a, long_b, short_b
-
-
-def get_feature_premium_meta(chars_df: pd.DataFrame | None = None) -> dict:
-    """特徵溢酬 API：可選維度與資料日期範圍。"""
-    if chars_df is None:
-        try:
-            chars_df = load_factor_chars_table()
-        except FileNotFoundError:
-            return {
-                "ok": False,
-                "message": "找不到因子特徵與載荷 CSV，請先執行 generate_factor_chars_loadings_csv.py",
-                "features": FEATURE_SORT_COLS,
-                "date_range": None,
-            }
-    dr = chars_df["date"].dropna()
-    if dr.empty:
-        return {"ok": False, "message": "因子特徵表無有效日期", "features": FEATURE_SORT_COLS, "date_range": None}
-    return {
-        "ok": True,
-        "features": list(FEATURE_SORT_COLS),
-        "date_range": {
-            "min": dr.min().strftime("%Y-%m-%d"),
-            "max": dr.max().strftime("%Y-%m-%d"),
-        },
-    }
-
-
-def get_feature_premium_series(
-    price_df: pd.DataFrame,
-    dim1: str,
-    dim2: str,
-    start: str | None = None,
-    end: str | None = None,
-    include_mkt: bool = True,
-) -> dict:
-    """
-    月再平衡（月末最後交易日 formation，次一交易日起生效）、雙重排序 tercile LS（等權、個股超額％與因子腳本一致）。
-    """
-    dim1 = (dim1 or "").strip()
-    dim2 = (dim2 or "").strip()
-    if dim1 == dim2:
-        return {"ok": False, "message": "第一維與第二維不可相同", "dates": [], "ls_daily": [], "ls_cum": [], "mkt_excess_daily": [], "mkt_excess_cum": []}
-    if dim1 not in FEATURE_SORT_COLS or dim2 not in FEATURE_SORT_COLS:
-        return {"ok": False, "message": f"無效維度，僅支援：{FEATURE_SORT_COLS}", "dates": [], "ls_daily": [], "ls_cum": [], "mkt_excess_daily": [], "mkt_excess_cum": []}
-
-    try:
-        chars_df = load_factor_chars_table()
-    except FileNotFoundError as e:
-        return {"ok": False, "message": str(e), "dates": [], "ls_daily": [], "ls_cum": [], "mkt_excess_daily": [], "mkt_excess_cum": []}
-
-    need_price = ["證券代碼", "年月日", "date", "報酬率％", "市值(百萬元)"]
-    for c in need_price:
-        if c not in price_df.columns:
-            return {"ok": False, "message": f"股價資料缺少欄位：{c}", "dates": [], "ls_daily": [], "ls_cum": [], "mkt_excess_daily": [], "mkt_excess_cum": []}
-
-    px = price_df[need_price].copy()
-    px["code"] = px["證券代碼"].astype(str).str.split().str[0]
-    px = px[px["code"].str.match(r"^\d{4}$", na=False)]
-
-    chars_df = chars_df.copy()
-    chars_df["code"] = chars_df["證券代碼"].astype(str).str.strip()
-    ccols = ["code", "date"] + [c for c in FEATURE_SORT_COLS if c in chars_df.columns]
-    merged = chars_df[ccols].merge(
-        px.drop(columns=["證券代碼"], errors="ignore"),
-        on=["code", "date"],
-        how="inner",
-    )
-    if merged.empty:
-        return {"ok": False, "message": "特徵與股價無法對齊（日期／代碼交集為空）", "dates": [], "ls_daily": [], "ls_cum": [], "mkt_excess_daily": [], "mkt_excess_cum": []}
-
-    dr_min, dr_max = merged["date"].min(), merged["date"].max()
-    if start:
-        t0 = pd.to_datetime(start, errors="coerce")
-        if pd.notna(t0):
-            dr_min = max(dr_min, t0)
-    if end:
-        t1 = pd.to_datetime(end, errors="coerce")
-        if pd.notna(t1):
-            dr_max = min(dr_max, t1)
-    merged = merged[(merged["date"] >= dr_min) & (merged["date"] <= dr_max)]
-    if merged.empty:
-        return {"ok": False, "message": "指定區間無資料", "dates": [], "ls_daily": [], "ls_cum": [], "mkt_excess_daily": [], "mkt_excess_cum": []}
-
-    rf_series = load_risk_free_series()
-
-    merged["date"] = pd.to_datetime(merged["date"])
-    udates = merged["date"].dropna().unique()
-    rf_map = {pd.Timestamp(d): _rf_for_date(rf_series, pd.Timestamp(d)) for d in udates}
-    r_pct = pd.to_numeric(merged["報酬率％"], errors="coerce")
-    merged["excess"] = (r_pct / 100.0 - merged["date"].map(lambda d: rf_map.get(pd.Timestamp(d), 0.0))) * 100.0
-
-    trading_days = sorted({pd.Timestamp(d) for d in merged["date"].dropna().unique()})
-    if len(trading_days) < 5:
-        return {"ok": False, "message": "交易日數過少", "dates": [], "ls_daily": [], "ls_cum": [], "mkt_excess_daily": [], "mkt_excess_cum": []}
-
-    next_td = {trading_days[i]: trading_days[i + 1] for i in range(len(trading_days) - 1)}
-    month_ends = _last_trading_day_per_month(trading_days)
-    month_ends = [pd.Timestamp(d) for d in month_ends]
-    # 僅保留可作 formation 且有「次日」之月末
-    reb_points = [d for d in month_ends if d in next_td]
-
-    merged["ts"] = merged["date"].map(pd.Timestamp)
-
-    # 每日 panel：code -> excess
-    by_date = {pd.Timestamp(d): g[["code", "excess"]].copy() for d, g in merged.groupby("ts")}
-
-    # 大盤 Y9999 超額
-    mkt_daily = {}
-    if include_mkt:
-        mpx = price_df[price_df["證券代碼"].astype(str).str.contains("Y9999", na=False)]
-        if not mpx.empty:
-            mpx = mpx[["date", "報酬率％"]].drop_duplicates(subset=["date"])
-            for _, rr in mpx.iterrows():
-                di = rr["date"]
-                if pd.isna(di) or di < dr_min or di > dr_max:
-                    continue
-                rff = _rf_for_date(rf_series, pd.Timestamp(di))
-                rp = rr["報酬率％"]
-                if pd.isna(rp):
-                    mkt_daily[pd.Timestamp(di)] = math.nan
-                else:
-                    mkt_daily[pd.Timestamp(di)] = (float(rp) / 100.0 - rff) * 100.0
-
-    # formation -> portfolios
-    port_by_reb = {}
-    for rday in reb_points:
-        rts = pd.Timestamp(rday)
-        if rts not in by_date:
-            continue
-        panel_r = merged[merged["ts"] == rts]
-        ports = _formation_portfolios(panel_r, dim1, dim2)
-        if ports is not None:
-            port_by_reb[rts] = ports
-
-    if not port_by_reb:
-        return {"ok": False, "message": "無法於任何月末形成有效投組（樣本或分組不足）", "dates": [], "ls_daily": [], "ls_cum": [], "mkt_excess_daily": [], "mkt_excess_cum": []}
-
-    sorted_rebs = sorted(port_by_reb.keys())
-
-    def active_reb_for(t: pd.Timestamp):
-        """最大 r 使得 next_td[r] <= t。"""
-        best = None
-        for r in sorted_rebs:
-            nx = next_td.get(r)
-            if nx is None:
-                continue
-            if nx <= t:
-                best = r
-        return best
-
-    def ew_spread(rows: pd.DataFrame, long_c: frozenset, short_c: frozenset) -> float:
-        L = rows[rows["code"].isin(long_c)]["excess"].dropna()
-        S = rows[rows["code"].isin(short_c)]["excess"].dropna()
-        if len(L) == 0 or len(S) == 0:
-            return math.nan
-        return float(L.mean() - S.mean())
-
-    dates_out = []
-    ls_daily = []
-    mkt_exc = []
-
-    cum = 1.0
-    cum_m = 1.0
-    ls_cum = []
-    mkt_cum = []
-
-    for t in trading_days:
-        ts = pd.Timestamp(t)
-        if ts < dr_min or ts > dr_max:
-            continue
-        rform = active_reb_for(ts)
-        if rform is None or rform not in port_by_reb:
-            continue
-        long_a, short_a, long_b, short_b = port_by_reb[rform]
-        g = by_date.get(ts)
-        if g is None or g.empty:
-            continue
-        sp_a = ew_spread(g, long_a, short_a)
-        sp_b = ew_spread(g, long_b, short_b)
-        parts = [x for x in (sp_a, sp_b) if x == x]  # not nan
-        if not parts:
-            val = math.nan
-        elif len(parts) == 1:
-            val = parts[0]
-        else:
-            val = (parts[0] + parts[1]) / 2.0
-
-        dates_out.append(ts.strftime("%Y-%m-%d"))
-        ls_daily.append(round(val, 6) if val == val else None)
-
-        mtv = mkt_daily.get(ts)
-        if include_mkt:
-            mkt_exc.append(round(mtv, 6) if mtv is not None and mtv == mtv else None)
-        else:
-            mkt_exc.append(None)
-
-        if val == val:
-            cum *= 1.0 + val / 100.0
-        ls_cum.append(round((cum - 1.0) * 100.0, 6))
-        if include_mkt and mtv is not None and mtv == mtv:
-            cum_m *= 1.0 + mtv / 100.0
-            mkt_cum.append(round((cum_m - 1.0) * 100.0, 6))
-        else:
-            mkt_cum.append(None)
-
-    return {
-        "ok": True,
-        "dim1": dim1,
-        "dim2": dim2,
-        "rebalance_rule": "日曆月末最後交易日收盤分組，次一交易日起持有",
-        "dates": dates_out,
-        "ls_daily": ls_daily,
-        "ls_cum": ls_cum,
-        "mkt_excess_daily": mkt_exc,
-        "mkt_excess_cum": mkt_cum,
-        "notes": "日頻因子報酬.csv 定義不同；此為月換檔之雙重排序 tercile 等權 LS。超額報酬與因子腳本相同：報酬率％/100 − 一年定存％/100。",
-    }

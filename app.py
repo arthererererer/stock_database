@@ -129,6 +129,130 @@ def api_capital_flow():
     return _json_resp(ds.get_capital_flow_data(get_df(), start, end))
 
 
+@app.route("/api/change-distribution")
+def api_change_distribution():
+    """
+    大盤監控區：最新交易日之個股漲跌幅區間家數（資料來源：TEJ 股價資料庫）。
+    """
+    try:
+        pdf = get_stock_price_df()
+    except (FileNotFoundError, ValueError) as e:
+        return _json_resp({
+            "status": "no_data",
+            "message": str(e) if str(e) else "無法讀取股價資料庫",
+        })
+    dist = ds.get_change_distribution_latest(pdf)
+    if not dist:
+        return _json_resp({"status": "no_data", "message": "無可用個股資料以計算漲跌幅分布"})
+    return _json_resp(dist)
+
+
+@app.route("/api/sector-performance")
+def api_sector_performance():
+    """大盤監控：依類股清單之類股橫條圖／折線圖 bootstrap（TEJ 最新日）。"""
+    try:
+        pdf = get_stock_price_df()
+    except (FileNotFoundError, ValueError) as e:
+        return _json_resp({
+            "status": "no_data",
+            "message": str(e) if str(e) else "無法讀取股價資料庫",
+        })
+    return _json_resp(ds.get_sector_performance_bootstrap(pdf))
+
+
+@app.route("/api/sector-performance/lines", methods=["POST"])
+def api_sector_performance_lines():
+    """依勾選之類股（自選成分）與個股代碼，回傳累積報酬率％折線序列（由日報酬複利換算）。"""
+    try:
+        pdf = get_stock_price_df()
+    except (FileNotFoundError, ValueError) as e:
+        return _json_resp({
+            "status": "no_data",
+            "message": str(e) if str(e) else "無法讀取股價資料庫",
+        })
+    payload = request.get_json(silent=True) or {}
+    start = _clean_stock_date_arg(payload.get("start"))
+    end = _clean_stock_date_arg(payload.get("end"))
+    sector_series = payload.get("sector_series") or []
+    stock_codes = payload.get("stock_codes") or []
+    if not isinstance(sector_series, list):
+        sector_series = []
+    if not isinstance(stock_codes, list):
+        stock_codes = []
+    return _json_resp(
+        ds.get_sector_performance_lines(pdf, start, end, sector_series, stock_codes)
+    )
+
+
+@app.route("/api/sector-performance/valuation", methods=["POST"])
+def api_sector_performance_valuation():
+    """與 lines 相同勾選：月頻本益比／淨值比（成分月末最後交易日簡單平均）與摘要表。"""
+    try:
+        pdf = get_stock_price_df()
+    except (FileNotFoundError, ValueError) as e:
+        return _json_resp({
+            "status": "no_data",
+            "message": str(e) if str(e) else "無法讀取股價資料庫",
+        })
+    payload = request.get_json(silent=True) or {}
+    start = _clean_stock_date_arg(payload.get("start"))
+    end = _clean_stock_date_arg(payload.get("end"))
+    sector_series = payload.get("sector_series") or []
+    stock_codes = payload.get("stock_codes") or []
+    if not isinstance(sector_series, list):
+        sector_series = []
+    if not isinstance(stock_codes, list):
+        stock_codes = []
+    return _json_resp(
+        ds.get_sector_valuation_monthly(pdf, start, end, sector_series, stock_codes)
+    )
+
+
+@app.route("/api/sector-performance/institutional", methods=["POST"])
+def api_sector_performance_institutional():
+    """與 lines 相同 body：回傳外資／投信／自營折線序列（億元）。"""
+    try:
+        pdf = get_stock_price_df()
+        cdf = get_chip_df()
+    except (FileNotFoundError, ValueError) as e:
+        return _json_resp({
+            "status": "no_data",
+            "message": str(e) if str(e) else "無法讀取股價或籌碼資料庫",
+        })
+    payload = request.get_json(silent=True) or {}
+    start = _clean_stock_date_arg(payload.get("start"))
+    end = _clean_stock_date_arg(payload.get("end"))
+    sector_series = payload.get("sector_series") or []
+    stock_codes = payload.get("stock_codes") or []
+    if not isinstance(sector_series, list):
+        sector_series = []
+    if not isinstance(stock_codes, list):
+        stock_codes = []
+    return _json_resp(
+        ds.get_sector_institutional_lines(
+            pdf, cdf, start, end, sector_series, stock_codes,
+        )
+    )
+
+
+@app.route("/api/market-institutional-flow")
+def api_market_institutional_flow():
+    """大盤監控：三大法人買賣超金額（億元，收盤×張數估算），可選上市／上櫃分拆。"""
+    try:
+        pdf = get_stock_price_df()
+        cdf = get_chip_df()
+    except (FileNotFoundError, ValueError) as e:
+        return _json_resp({
+            "status": "no_data",
+            "message": str(e) if str(e) else "無法讀取股價或籌碼資料庫",
+            "split_available": False,
+            "markets": {},
+        })
+    start = _clean_stock_date_arg(request.args.get("start"))
+    end = _clean_stock_date_arg(request.args.get("end"))
+    return _json_resp(ds.get_market_institutional_flow(pdf, cdf, start, end))
+
+
 @app.route("/api/heatmap")
 def api_heatmap():
     return _json_resp(ds.get_heatmap_data(get_df()))
@@ -145,25 +269,45 @@ def api_market_amp():
     return _json_resp(data)
 
 
-@app.route("/api/feature-premium/meta")
-def api_feature_premium_meta():
-    """特徵溢酬監控：可選維度與因子特徵表日期範圍。"""
-    return _json_resp(ds.get_feature_premium_meta())
+def _query_bool_param(v) -> bool:
+    if v is None:
+        return False
+    return str(v).strip().lower() in ("1", "true", "yes", "on")
 
 
-@app.route("/api/feature-premium/series")
-def api_feature_premium_series():
+def _query_int_clamped(v, default: int, lo: int, hi: int) -> int:
+    try:
+        x = int(v)
+        return max(lo, min(hi, x))
+    except (TypeError, ValueError):
+        return default
+
+
+@app.route("/api/breadth-amp-correlation")
+def api_breadth_amp_correlation():
     """
-    特徵溢酬監控：月再平衡雙重排序 tercile long–short 日序列與累積％、Y9999 超額對照。
-    參數：dim1, dim2, start, end, show_mkt=1|0
+    σ_t（合併廣度滾動標準差）與每日振幅大個股比例 P_t 之皮爾森相關，
+    滯後 k = corr(σ_t, P_{t+k})；預設 k 由 BREADTH_AMP_CORR_LAG_DEFAULT_* 決定（±20 交易日）。
+    查詢參數：full_sample=1 時忽略 start/end，使用廣度與振幅 JSON 之全部交集；
+    lag_min、lag_max 可覆寫滯後範圍（絕對值上限 BREADTH_AMP_CORR_LAG_ABS_CAP）。
     """
-    dim1 = request.args.get("dim1", "")
-    dim2 = request.args.get("dim2", "")
     start = request.args.get("start")
     end = request.args.get("end")
-    show_mkt = request.args.get("show_mkt", "1") not in ("0", "false", "False", "")
+    full = _query_bool_param(request.args.get("full_sample"))
+    cap = ds.BREADTH_AMP_CORR_LAG_ABS_CAP
+    d_lo = ds.BREADTH_AMP_CORR_LAG_DEFAULT_MIN
+    d_hi = ds.BREADTH_AMP_CORR_LAG_DEFAULT_MAX
+    lag_min = _query_int_clamped(request.args.get("lag_min"), d_lo, -cap, cap)
+    lag_max = _query_int_clamped(request.args.get("lag_max"), d_hi, -cap, cap)
     return _json_resp(
-        ds.get_feature_premium_series(get_stock_price_df(), dim1, dim2, start, end, include_mkt=show_mkt)
+        ds.get_breadth_sigma_amp_correlation(
+            get_df(),
+            start,
+            end,
+            lag_min=lag_min,
+            lag_max=lag_max,
+            use_full_sample=full,
+        ),
     )
 
 
@@ -191,7 +335,6 @@ def api_reload():
     global _df, _intl_df, _fx_df, _stock_price_df, _chip_df, _monthly_df, _quarterly_df
     _df = _intl_df = _fx_df = None
     _stock_price_df = _chip_df = _monthly_df = _quarterly_df = None
-    ds.invalidate_factor_chars_cache()
     df = get_df()
     return jsonify({"status": "ok", "rows": len(df)})
 
@@ -210,12 +353,22 @@ def api_stock_meta():
     })
 
 
+def _clean_stock_date_arg(v):
+    """忽略前端未初始化時可能傳入的 undefined/null 字串。"""
+    if v is None:
+        return None
+    s = str(v).strip()
+    if not s or s.lower() in ("undefined", "null", "none"):
+        return None
+    return s
+
+
 @app.route("/api/stock/series")
 def api_stock_series():
     """回傳指定個股的日頻股價 + 籌碼時序。"""
     codes = [c.strip() for c in request.args.get("codes", "").split(",") if c.strip()]
-    start = request.args.get("start")
-    end   = request.args.get("end")
+    start = _clean_stock_date_arg(request.args.get("start"))
+    end   = _clean_stock_date_arg(request.args.get("end"))
     return _json_resp(
         ds.get_stock_series(get_stock_price_df(), get_chip_df(), codes, start, end)
     )

@@ -1,0 +1,10 @@
+本國未上市，未上櫃公開發行證券: https://isin.twse.com.tw/isin/C_public.jsp?strMode=1
+本國上市證券國際證券辨識號碼一覽表: https://isin.twse.com.tw/isin/C_public.jsp?strMode=2
+本國上市債券，上櫃債券，國際證券辨識號碼一覽表: https://isin.twse.com.tw/isin/C_public.jsp?strMode=3
+本國上櫃證券國際證券辨識號碼一覽表: https://isin.twse.com.tw/isin/C_public.jsp?strMode=4
+本國興櫃證券國際證券辨識號碼一覽表: https://isin.twse.com.tw/isin/C_public.jsp?strMode=5
+本國期貨及選擇權國際證券辨識號碼一覽表: https://isin.twse.com.tw/isin/C_public.jsp?strMode=6
+本國開放式證券投資信託基金，國際證券辨識號碼一覽表: https://isin.twse.com.tw/isin/C_public.jsp?strMode=7
+本國未公開發行之創櫃板證券國際證券辨識號碼一覽表: https://isin.twse.com.tw/isin/C_public.jsp?strMode=8
+登錄買賣黃金現貨國際證券辨識號碼一覽表: https://isin.twse.com.tw/isin/C_public.jsp?strMode=9
+本國指數國際證券辨識號碼一覽表: https://isin.twse.com.tw/isin/C_public.jsp?strMode=11

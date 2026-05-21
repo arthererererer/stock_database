@@ -1,0 +1,17 @@
+請幫我用 Python 爬蟲 investing.com 的歷史匯率資料。
+
+目標網址格式：https://hk.investing.com/currencies/krw-usd-historical-data
+需要的貨幣對：KRW, EUR, JPY, GBP, AUD, CAD, HKD, CNY, TWD（均對 USD）
+日期範圍：2026-01-01 至今天
+
+技術要求：
+- 請使用 undetected-chromedriver + Selenium，避免被反爬蟲擋掉
+- investing.com 的日期選取器是 React 自訂元件，需要用模擬點擊 + 直接設 JS value + dispatch events 的方式來更改日期
+- 套用日期後需等待資料表格重新載入再抓取
+- 請在每個關鍵操作步驟截圖存檔（方便除錯）
+- 資料輸出成 CSV，欄位包含：日期、開盤、最高、最低、收盤、漲跌幅
+
+注意：
+- 請加入 WebDriverWait 等待元素出現，超時時間建議 15-30 秒
+- 每個貨幣對之間請加入隨機等待（2-5秒）避免觸發反爬蟲
+- 若某個貨幣對爬取失敗，請跳過並繼續下一個

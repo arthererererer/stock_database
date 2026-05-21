@@ -1,0 +1,124 @@
+# ════════════════════════════════════════════════════
+# 每次開新 PowerShell 視窗，第一步執行這行（全域設定）
+# ════════════════════════════════════════════════════
+$env:DATABASE_URL = "postgresql://postgres:yourpassword@localhost:5432/postgres"
+
+
+重啟 Docker 資料庫
+執行以下步驟（管理員 PowerShell）
+第零步：開啟 Docker Desktop
+第一步：停用 WinNAT
+net stop winnat
+第二步：啟動容器
+docker start findb
+第三步：重啟 WinNAT
+net start winnat
+
+
+爬蟲和入庫（自動排程）
+日排程（每日 18:00，Task Scheduler: FinPlatform_DailyFx）  ：.\scheduler\run_daily_crawl_etl.ps1
+月排程（每月 15 日 15:00，Task Scheduler: FinPlatform_MonthlyWantgoo）：.\scheduler\run_monthly_crawl_etl.ps1
+
+
+爬蟲和入庫（手動）
+
+── 匯率 ──────────────────────────────────────────────────────────
+# 爬蟲 + 入庫（最近 7 天，直接跑排程腳本）
+.\scheduler\run_daily_crawl_etl.ps1
+
+# 只爬蟲（指定日期區間）
+python "investing.com爬蟲\scrape_fx_history.py" --start-date 2026-01-01 --end-date 2026-05-19 --output "investing.com爬蟲\fx_history_combined.csv"
+
+# 只入庫（不爬）
+python etl\load_crawler_fx.py --file "investing.com爬蟲\fx_history_combined.csv"
+
+── 玩股網月營收 ────────────────────────────────────────────────────
+# 爬蟲（滾動最近 4 個月）
+python "玩股網爬蟲\scrape_monthly_revenue.py" --rolling-months 4 -o "玩股網爬蟲\output\月營收_scheduled_latest.csv" --headless
+
+# 入庫
+python etl\load_wantgoo_monthly_revenue.py --file "玩股網爬蟲\output\月營收_scheduled_latest.csv"
+
+── TIP 台灣指數 ────────────────────────────────────────────────────
+# 爬蟲（指定區間）
+python "TIP台灣指數爬蟲\scrape_tip_history.py" --all --start 2026/01/01 --end 2026/05/19 -o "TIP台灣指數爬蟲\output\tip_20260101_20260519.csv"
+
+# 合併入歷史檔
+python "TIP台灣指數爬蟲\merge_daily_into_all_history.py" "TIP台灣指數爬蟲\output\tip_20260101_20260519.csv"
+
+# 只重爬失敗的指數
+python "TIP台灣指數爬蟲\scrape_tip_history.py" --retry-errors "TIP台灣指數爬蟲\output\tip_20260101_20260519.errors.txt" --start 2026/01/01 --end 2026/05/19
+
+
+TEJ 入庫
+
+# 全量匯入（含匯入前完整備份，首次或大批量更新用）
+python etl\load_tej.py --all
+python etl\load_tej.py --table tej_stock_price
+python etl\load_tej.py --table tej_chip
+python etl\load_tej.py --table tej_market_stats
+python etl\load_tej.py --table tej_intl_index
+python etl\load_tej.py --table tej_director_monthly
+python etl\load_tej.py --table tej_quarterly
+
+# 增量匯入（--skip-backup：跳過完整備份，速度明顯加快，適合日常補資料）
+python etl\load_tej.py --all --skip-backup
+python etl\load_tej.py --table tej_stock_price --skip-backup
+python etl\load_tej.py --table tej_chip --skip-backup
+
+
+Tableau 做圖
+
+── 指數儀表板：各國大盤指數 + 匯率拆解 ─────────────────────────────
+# 步驟一：產出所有 CSV（指定年度）
+python "指數儀錶板\build_intl_index_april_decomposition.py" --year 2026 --from-db
+
+# 自訂日期區間（同時控制時間序列與快照的範圍）
+python "指數儀錶板\build_intl_index_april_decomposition.py" --start-date 20260101 --end-date 20260519 --from-db
+
+輸出檔案                                        說明
+international_index_decomposition_tableau.csv   每日分解時間序列（方案三用）
+intl_index_snapshot_tableau.csv                 期末快照，隨 --start-date/--end-date 自動對應（方案一、二用）
+intl_rolling_stats_tableau.csv                  每市場每日滾動波動度 / Sortino（可直接拖進 Tableau）
+intl_summary_stats.csv                          全期年化 std / Sortino / Sharpe + 與 cum_cross_pct 的回歸（slope、R²、p-value）
+
+# 步驟二：跨市場相關性分析（可選）
+python "指數儀錶板\analyze_intl_cross_market.py"
+
+輸出檔案                            說明
+intl_cross_market_corr.csv          全市場相關係數矩陣
+intl_cross_market_regression.csv    每市場 vs 美股（SB23）OLS：α、β、t-stat、p-value、R²
+intl_cross_market_conditional.csv   條件統計：各市場「股漲＋幣升/跌」四情境下美股日均報酬與上漲機率
+
+── 個股儀表板：月營收 ──────────────────────────────────────────────
+# 單股
+python 個股儀表板\generate_revenue_csv.py --mode single --codes 2330
+
+# 手動多股
+python 個股儀表板\generate_revenue_csv.py --mode multi --codes 2330 2454 2303
+
+# 類股（名稱須與 類股清單.csv 第一列完全一致）
+python 個股儀表板\generate_revenue_csv.py --mode sector --sector 上市半導體
+
+# 指定月數（預設 36 個月）
+python 個股儀表板\generate_revenue_csv.py --mode sector --sector 上市半導體 --months 60
+
+
+研究報告
+
+── 振幅分析報告（Report A） ─────────────────────────────────────────
+# 步驟一：事前合併來源資料（加速報告產出，TEJ 股價 CSV 更新後重跑）
+python scripts\consolidate_report_a_data.py
+
+# 步驟二：產出 HTML 報告
+python scripts\generate_report_a.py
+
+── 事件研究彙整 ──────────────────────────────────────────────────────
+python scripts\generate_event_csv.py
+
+── 因子分析（須依序執行）────────────────────────────────────────────
+# 步驟一：計算因子報酬（Fama-French + 動能/反轉）
+python scripts\generate_factor_returns_csv.py
+
+# 步驟二：計算各股因子特徵與載荷（需先完成步驟一）
+python scripts\generate_factor_chars_loadings_csv.py
